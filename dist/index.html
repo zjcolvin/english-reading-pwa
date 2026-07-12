@@ -9,17 +9,28 @@
 .container{max-width:800px;margin:0 auto;padding:16px 16px 80px}
 textarea{width:100%;height:150px;padding:12px;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#e2e8f0;font-size:14px;resize:vertical}
 button{cursor:pointer;font-family:inherit}
-.btn-row{display:flex;gap:8px;margin-top:10px;align-items:center}
-.fab{position:fixed;bottom:20px;right:20px;padding:12px 18px;background:#7c3aed;border-radius:30px;color:#fff;font-size:13px;font-weight:700;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:9999}
+.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 .card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:10px 12px;margin-bottom:8px}
+.fab{position:fixed;bottom:20px;right:20px;padding:12px 18px;background:#7c3aed;border:none;border-radius:30px;color:#fff;font-size:13px;font-weight:700;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:9999}
 </style>
 </head>
 <body>
 <div class="container">
-<h1>📖 英语精读</h1>
-<div id="status" style="font-size:12px;color:#64748b;margin-bottom:12px">✓ 页面加载成功</div>
+<div class="header">
+  <div><h1 style="margin:0;font-size:20px">📖 英语精读</h1><div style="font-size:12px;color:#64748b">A2-B1 精读笔记</div></div>
+  <button id="keyBtn" style="padding:6px 14px;background:#334155;border:1px solid #475569;border-radius:6px;color:#e2e8f0;font-size:12px">⚙️ API Key</button>
+</div>
+
+<div id="keyPanel" style="display:none;background:#1e293b;border:1px solid #3b82f6;border-radius:12px;padding:14px;margin-bottom:16px">
+  <div style="font-size:13px;color:#93c5fd;margin-bottom:8px">⚙️ 设置 Groq API Key(存浏览器本地)</div>
+  <div style="display:flex;gap:8px">
+    <input type="password" id="keyInput" placeholder="gsk_..." style="flex:1;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:13px"/>
+    <button id="saveKeyBtn" style="padding:8px 16px;background:#3b82f6;border:none;border-radius:6px;color:#fff;font-size:13px">保存</button>
+  </div>
+</div>
+
 <textarea id="ta" placeholder="粘贴英语原文(100-300词)..."></textarea>
-<div class="btn-row">
+<div style="display:flex;gap:8px;margin-top:10px;align-items:center;justify-content:space-between">
   <div style="font-size:12px;color:#64748b" id="counter">0 词</div>
   <button id="analyze" style="padding:10px 24px;background:#3b82f6;border:none;border-radius:8px;color:#fff;font-weight:600;font-size:14px">开始分析</button>
 </div>
@@ -29,71 +40,48 @@ button{cursor:pointer;font-family:inherit}
 <button class="fab" id="fab">🔍 自动找新闻</button>
 
 <script>
-var ta = document.getElementById("ta");
-var analyzeBtn = document.getElementById("analyze");
-var statusDiv = document.getElementById("status");
-var errorDiv = document.getElementById("error");
-var resultsDiv = document.getElementById("results");
-var counter = document.getElementById("counter");
+var ta=document.getElementById("ta"),analyzeBtn=document.getElementById("analyze"),statusDiv=document.getElementById("status"),
+    errorDiv=document.getElementById("error"),resultsDiv=document.getElementById("results"),counter=document.getElementById("counter"),
+    keyBtn=document.getElementById("keyBtn"),keyPanel=document.getElementById("keyPanel"),keyInput=document.getElementById("keyInput"),
+    saveKeyBtn=document.getElementById("saveKeyBtn"),fab=document.getElementById("fab");
 
-ta.addEventListener("input", function(){
-  counter.textContent = ta.value.trim().split(/\s+/).filter(Boolean).length + " 词";
+function getKey(){return localStorage.getItem("groq_api_key")||""}
+function hasKey(){return getKey().length>10}
+function refreshBtn(){analyzeBtn.style.background=hasKey()?"#3b82f6":"#475569";analyzeBtn.textContent=hasKey()?"开始分析":"请先配置 API"}
+
+ta.addEventListener("input",function(){
+  counter.textContent=ta.value.trim().split(/\s+/).filter(Boolean).length+" 词";
 });
 
-analyzeBtn.onclick = function(){
-  var text = ta.value.trim();
-  if(text.length < 20){ showError("文本太短,至少20词"); return; }
-  var key = localStorage.getItem("groq_api_key") || "";
-  if(!key){ showError("请先配置 API Key(顶部按钮)"); return; }
-  analyze(text, key);
+keyBtn.onclick=function(){keyPanel.style.display=keyPanel.style.display==="none"?"block":"none";keyInput.value=getKey()};
+saveKeyBtn.onclick=function(){localStorage.setItem("groq_api_key",keyInput.value.trim());keyPanel.style.display="none";refreshBtn()};
+refreshBtn();
+
+analyzeBtn.onclick=function(){
+  var text=ta.value.trim();
+  if(text.length<20){showError("文本太短,至少20词");return}
+  if(!hasKey()){keyPanel.style.display="block";return}
+  analyze(text,getKey());
 };
 
-function showError(msg){ errorDiv.textContent = "⚠️ " + msg; }
-
-function analyze(text, key){
-  resultsDiv.innerHTML = "<div style='color:#94a3b8'>分析中...</div>";
-  errorDiv.textContent = "";
-  
-  var prompt = "从以下英语文本提取8个核心A2-B1词汇。严格按照JSON格式输出(只输出JSON,不要markdown):{vocab:[{word:"单词",ipa:"/音标/",pos:"n./v./adj.",cambridge:"Cambridge英文释义20词内",chinese:"中文释义",register:"口语/书面/通用",memory:"词根联想助记15字内",synonyms_a2:"A2基础词",synonyms_natural:"口语版",synonyms_formal:"正式版",collocations:["搭配1","搭配2"],original:"原文例句",new_example:"新造句"}]}。文本:" + text.slice(0,3000);
-  
-  fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method:"POST", headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},
-    body: JSON.stringify({model:"llama-3.3-70b-versatile", messages:[{role:"user",content:prompt}], temperature:0.3, maxTokens:2000})
-  }).then(function(r){ return r.ok ? r.json() : Promise.reject("API "+r.status); })
-  .then(function(d){
-    var content = d.choices[0].message.content;
-    var parsed = JSON.parse(content);
-    renderVocab(parsed.vocab);
-  }).catch(function(e){
-    showError(typeof e === "string" ? e : e.message);
-    resultsDiv.innerHTML = "";
-  });
+function showError(msg){errorDiv.textContent="⚠️ "+msg}
+function analyze(text,key){
+  resultsDiv.innerHTML="<div style=\"color:#94a3b8\">分析中...</div>";
+  errorDiv.textContent="";
+  var prompt="从以下英语文本提取8个核心A2-B1词汇。严格按照JSON格式输出(只输出JSON,不要markdown):{vocab:[{word:\"单词\",ipa:\"/音标/\",pos:\"n./v./adj.\",cambridge:\"Cambridge英文释义20词内\",chinese:\"中文释义\",register:\"口语/书面/通用\",memory:\"词根联想助记15字内\",synonyms_a2:\"A2基础词\",synonyms_natural:\"口语版\",synonyms_formal:\"正式版\",collocations:[\"搭配1\",\"搭配2\"],original:\"原文例句\",new_example:\"新造句\"}]}。文本:"+text.slice(0,3000);
+  fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},body:JSON.stringify({model:"llama-3.3-70b-versatile",messages:[{role:"user",content:prompt}],temperature:0.3,maxTokens:2000})}).then(function(r){return r.ok?r.json():Promise.reject("API "+r.status)}).then(function(d){var c=d.choices[0].message.content;renderVocab(JSON.parse(c).vocab)}).catch(function(e){showError(typeof e==="string"?e:e.message);resultsDiv.innerHTML=""});
 }
 
 function renderVocab(vocab){
-  resultsDiv.innerHTML = "<h3 style='color:#4ade80'>📝 词汇学习(" + vocab.length + "词)</h3>" +
-    "<div style='display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px'>";
+  var h="<h3 style=\"color:#4ade80\">📝 词汇学习("+vocab.length+"词)</h3><div style=\"display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px\">";
   vocab.forEach(function(v){
-    resultsDiv.innerHTML += "<div class='card'>" +
-      "<div style='font-size:15px;font-weight:700;color:#f1f5f9'>" + v.word + " <span style='font-size:11px;color:#fbbf24'>" + (v.pos||"") + "</span> <span style='font-size:10px;color:#94a3b8'>" + (v.ipa||"") + "</span></div>" +
-      "<div style='font-size:12px;color:#cbd5e1'>" + v.chinese + "</div>" +
-      "<div style='font-size:10px;color:#a78bfa'>💡 " + (v.memory||"-") + "</div>" +
-      "<div style='font-size:10px;color:#60a5fa'>🔄 " + (v.synonyms_a2||"-") + " → " + (v.synonyms_natural||"-") + "</div>" +
-      "<div style='font-size:10px;color:#cbd5e1;margin-top:4px'>📖 " + (v.original||"-").slice(0,60) + "</div>" +
-      "</div>";
+    h+="<div class=\"card\"><div style=\"font-size:15px;font-weight:700;color:#f1f5f9\">"+v.word+" <span style=\"font-size:11px;color:#fbbf24\">"+(v.pos||"")+"</span> <span style=\"font-size:10px;color:#94a3b8\">"+(v.ipa||"")+"</span></div><div style=\"font-size:12px;color:#cbd5e1\">"+v.chinese+"</div><div style=\"font-size:10px;color:#a78bfa\">💡 "+(v.memory||"-")+"</div><div style=\"font-size:10px;color:#60a5fa\">🔄 "+(v.synonyms_a2||"-")+" → "+(v.synonyms_natural||"-")+"</div></div>";
   });
-  resultsDiv.innerHTML += "</div>";
+  resultsDiv.innerHTML=h+"</div>";
 }
 
-// FAB
-var FALLBACK = [
-  "A simple guide to healthy eating. Many people want to eat better. Eat more fruits and vegetables. Drink enough water. Reduce processed foods. Do not skip breakfast.",
-  "Walking is simple exercise. Walk thirty minutes daily. Strengthens heart and lungs. Improves mood. Start slowly."
-];
-document.getElementById("fab").onclick = function(){
-  ta.value = FALLBACK[Math.floor(Math.random()*FALLBACK.length)];
-  counter.textContent = ta.value.split(/\s+/).filter(Boolean).length + " 词";
-};
+var FALLBACK=["A simple guide to healthy eating. Many people want to eat better but do not know where to start. Eating healthy does not have to be difficult or expensive. Here are some simple tips that anyone can follow. First, try to eat more fruits and vegetables. Experts recommend eating at least five portions every day. They contain important vitamins and minerals. Second, drink enough water. Water is essential for every function in your body. Most adults should drink about eight glasses each day. Third, reduce processed foods. These contain too much sugar and unhealthy fats. Choose whole foods instead.","Walking is one of the simplest forms of exercise. You do not need special equipment. Just thirty minutes a day strengthens your heart and lungs. It also improves mood and reduces stress. Start slowly and gradually increase."];
+fab.onclick=function(){ta.value=FALLBACK[Math.floor(Math.random()*FALLBACK.length)];counter.textContent=ta.value.split(/\s+/).filter(Boolean).length+" 词"};
 </script>
 </body>
 </html>
