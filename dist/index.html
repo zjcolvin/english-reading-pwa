@@ -7,22 +7,25 @@
 <style>
 *{box-sizing:border-box}body{margin:0;background:#0f172a;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
 .container{max-width:800px;margin:0 auto;padding:16px 16px 80px}
-textarea{width:100%;height:150px;padding:12px;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#e2e8f0;font-size:14px;resize:vertical}
+textarea{width:100%!important;height:150px;padding:12px;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#e2e8f0;font-size:14px;resize:vertical;display:block}
 button{cursor:pointer;font-family:inherit}
-.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 .card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:10px 12px;margin-bottom:8px}
 .fab{position:fixed;bottom:20px;right:20px;padding:12px 18px;background:#7c3aed;border:none;border-radius:30px;color:#fff;font-size:13px;font-weight:700;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:9999}
+.sec-hdr{font-size:13px;font-weight:700;color:#fbbf24;padding:6px 0;cursor:pointer;border-bottom:1px solid #334155;margin-bottom:8px}
 </style>
 </head>
 <body>
 <div class="container">
-<div class="header">
-  <div><h1 style="margin:0;font-size:20px">📖 英语精读</h1><div style="font-size:12px;color:#64748b">A2-B1 精读笔记</div></div>
+<h1 style="margin:0;font-size:20px">📖 英语精读</h1>
+<div style="font-size:12px;color:#64748b;margin:4px 0 16px">A2-B1 精读笔记</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+  <div style="font-size:12px;color:#64748b" id="counter">0 词</div>
   <button id="keyBtn" style="padding:6px 14px;background:#334155;border:1px solid #475569;border-radius:6px;color:#e2e8f0;font-size:12px">⚙️ API Key</button>
 </div>
 
 <div id="keyPanel" style="display:none;background:#1e293b;border:1px solid #3b82f6;border-radius:12px;padding:14px;margin-bottom:16px">
-  <div style="font-size:13px;color:#93c5fd;margin-bottom:8px">⚙️ 设置 Groq API Key(存浏览器本地)</div>
+  <div style="font-size:13px;color:#93c5fd;margin-bottom:8px">⚙️ Groq API Key(本地保存)</div>
   <div style="display:flex;gap:8px">
     <input type="password" id="keyInput" placeholder="gsk_..." style="flex:1;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:13px"/>
     <button id="saveKeyBtn" style="padding:8px 16px;background:#3b82f6;border:none;border-radius:6px;color:#fff;font-size:13px">保存</button>
@@ -30,9 +33,8 @@ button{cursor:pointer;font-family:inherit}
 </div>
 
 <textarea id="ta" placeholder="粘贴英语原文(100-300词)..."></textarea>
-<div style="display:flex;gap:8px;margin-top:10px;align-items:center;justify-content:space-between">
-  <div style="font-size:12px;color:#64748b" id="counter">0 词</div>
-  <button id="analyze" style="padding:10px 24px;background:#3b82f6;border:none;border-radius:8px;color:#fff;font-weight:600;font-size:14px">开始分析</button>
+<div style="display:flex;gap:8px;margin-top:10px">
+  <button id="analyze" style="padding:10px 24px;background:#475569;border:none;border-radius:8px;color:#fff;font-weight:600;font-size:14px">请先配置 API</button>
 </div>
 <div id="error" style="margin-top:12px;font-size:13px;color:#fecaca"></div>
 <div id="results" style="margin-top:20px"></div>
@@ -40,48 +42,82 @@ button{cursor:pointer;font-family:inherit}
 <button class="fab" id="fab">🔍 自动找新闻</button>
 
 <script>
-var ta=document.getElementById("ta"),analyzeBtn=document.getElementById("analyze"),statusDiv=document.getElementById("status"),
-    errorDiv=document.getElementById("error"),resultsDiv=document.getElementById("results"),counter=document.getElementById("counter"),
-    keyBtn=document.getElementById("keyBtn"),keyPanel=document.getElementById("keyPanel"),keyInput=document.getElementById("keyInput"),
-    saveKeyBtn=document.getElementById("saveKeyBtn"),fab=document.getElementById("fab");
+var ta=document.getElementById("ta"),analyzeBtn=document.getElementById("analyze"),errorDiv=document.getElementById("error"),resultsDiv=document.getElementById("results"),counter=document.getElementById("counter"),keyBtn=document.getElementById("keyBtn"),keyPanel=document.getElementById("keyPanel"),keyInput=document.getElementById("keyInput"),saveKeyBtn=document.getElementById("saveKeyBtn"),fab=document.getElementById("fab");
 
 function getKey(){return localStorage.getItem("groq_api_key")||""}
 function hasKey(){return getKey().length>10}
-function refreshBtn(){analyzeBtn.style.background=hasKey()?"#3b82f6":"#475569";analyzeBtn.textContent=hasKey()?"开始分析":"请先配置 API"}
+function refreshBtn(){analyzeBtn.style.background=hasKey()?"#3b82f6":"#475569";analyzeBtn.textContent=hasKey()?"开始分析":"请先配置 API";analyzeBtn.disabled=!hasKey()}
 
-ta.addEventListener("input",function(){
-  counter.textContent=ta.value.trim().split(/\s+/).filter(Boolean).length+" 词";
-});
-
+ta.addEventListener("input",function(){counter.textContent=ta.value.trim().split(/\s+/).filter(Boolean).length+" 词"});
 keyBtn.onclick=function(){keyPanel.style.display=keyPanel.style.display==="none"?"block":"none";keyInput.value=getKey()};
 saveKeyBtn.onclick=function(){localStorage.setItem("groq_api_key",keyInput.value.trim());keyPanel.style.display="none";refreshBtn()};
 refreshBtn();
 
 analyzeBtn.onclick=function(){
   var text=ta.value.trim();
-  if(text.length<20){showError("文本太短,至少20词");return}
+  if(text.length<20){showError("文本太短");return}
   if(!hasKey()){keyPanel.style.display="block";return}
   analyze(text,getKey());
 };
 
 function showError(msg){errorDiv.textContent="⚠️ "+msg}
 function analyze(text,key){
-  resultsDiv.innerHTML="<div style=\"color:#94a3b8\">分析中...</div>";
+  resultsDiv.innerHTML="<div style=\"color:#94a3b8\">分析中(约15秒)...</div>";
   errorDiv.textContent="";
-  var prompt="从以下英语文本提取8个核心A2-B1词汇。严格按照JSON格式输出(只输出JSON,不要markdown):{vocab:[{word:\"单词\",ipa:\"/音标/\",pos:\"n./v./adj.\",cambridge:\"Cambridge英文释义20词内\",chinese:\"中文释义\",register:\"口语/书面/通用\",memory:\"词根联想助记15字内\",synonyms_a2:\"A2基础词\",synonyms_natural:\"口语版\",synonyms_formal:\"正式版\",collocations:[\"搭配1\",\"搭配2\"],original:\"原文例句\",new_example:\"新造句\"}]}。文本:"+text.slice(0,3000);
-  fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},body:JSON.stringify({model:"llama-3.3-70b-versatile",messages:[{role:"user",content:prompt}],temperature:0.3,max_tokens:1500})}).then(function(r){return r.ok?r.json():Promise.reject("API "+r.status)}).then(function(d){var c=d.choices[0].message.content;renderVocab(JSON.parse(c).vocab)}).catch(function(e){showError(typeof e==="string"?e:e.message);resultsDiv.innerHTML=""});
+  var prompt="你是ESL精读教学专家。分析以下英语文本,输出完整精读教案(JSON格式,不要markdown代码块):\n\n"+text.slice(0,2500)+"\n\n严格输出JSON(不要```markdown):{vocab:[{word:\"\",ipa:\"/ /\",pos:\"n.\",cn_def:\"\",en_def:\"\",register:\"通用\",memory:\"\",synonyms_a2:\"\",synonyms_natural:\"\",synonyms_formal:\"\",collocations:[\"\",\"\"],original:\"\",new_example:\"\"}],pronunciation:[{written:\"\",natural:\"\",rule:\"\"}],pronunciation_sentence:{original:\"\",phonetic:\"\",annotations:[\"🔗连读说明\",\"🔉弱读说明\"]},rhythm:[{sentence:\"\",mark:\"●○●\"}],chunks:[{chunk:\"\",frequency:\"★★★\",variations:[\"\"],examples:[\"\"]}],synonym_discrimination:[{group:\"\",common_meaning:\"\",cards:[{word:\"\",register:\"\",collocation:\"\"}],substitutable:\"\",common_error:\"\",exercise:\"\"}],practice:{style_swap:[{informal:\"\",formal:\"\"}],shadowing:[\"\",\"\"],challenges:[\"\",\"\"]}}";
+  fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},body:JSON.stringify({model:"llama-3.3-70b-versatile",messages:[{role:"user",content:prompt}],temperature:0.3,max_tokens:2500})}).then(function(r){return r.ok?r.json():Promise.reject("HTTP "+r.status)}).then(function(d){var c=d.choices[0].message.content;try{renderFull(JSON.parse(c))}catch(e){var m=c.match(/\{[\s\S]*\}/);if(m)renderFull(JSON.parse(m[0]));else showError("解析失败")}}).catch(function(e){showError(typeof e==="string"?e:e.message);resultsDiv.innerHTML=""});
 }
 
-function renderVocab(vocab){
-  var h="<h3 style=\"color:#4ade80\">📝 词汇学习("+vocab.length+"词)</h3><div style=\"display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px\">";
-  vocab.forEach(function(v){
-    h+="<div class=\"card\"><div style=\"font-size:15px;font-weight:700;color:#f1f5f9\">"+v.word+" <span style=\"font-size:11px;color:#fbbf24\">"+(v.pos||"")+"</span> <span style=\"font-size:10px;color:#94a3b8\">"+(v.ipa||"")+"</span></div><div style=\"font-size:12px;color:#cbd5e1\">"+v.chinese+"</div><div style=\"font-size:10px;color:#a78bfa\">💡 "+(v.memory||"-")+"</div><div style=\"font-size:10px;color:#60a5fa\">🔄 "+(v.synonyms_a2||"-")+" → "+(v.synonyms_natural||"-")+"</div></div>";
+function renderFull(data){
+  resultsDiv.innerHTML="<h3 style=\"color:#4ade80\">📝 词汇学习("+(data.vocab?data.vocab.length:0)+"词)</h3>";
+  let grid=document.createElement("div");grid.style.cssText="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px;margin-bottom:16px";
+  (data.vocab||[]).forEach(function(v){
+    grid.innerHTML+=`<div class="card"><div style="font-size:14px;font-weight:700;color:#f1f5f9">${v.word} <span style="font-size:11px;color:#fbbf24">${v.pos||""}</span> <span style="font-size:10px;color:#94a3b8">${v.ipa||""}</span></div><div style="font-size:12px;color:#cbd5e1">${v.cn_def||""}</div><div style="font-size:10px;color:#94a3b8;font-style:italic">${v.en_def||""}</div><div style="font-size:10px;color:#a78bfa;margin-top:2px">💡 ${v.memory||"-"}</div><div style="font-size:10px;color:#60a5fa">🔄 ${(v.synonyms_a2||"-")} → ${(v.synonyms_natural||"-")} → ${(v.synonyms_formal||"-")}</div><div style="font-size:10px;color:#34d399">🔗 ${Array.isArray(v.collocations)?v.collocations.join(" / "):"-"}</div><details style="margin-top:4px"><summary style="font-size:10px;color:#60a5fa;cursor:pointer">例句</summary><div style="font-size:10px;color:#cbd5e1;margin-top:3px">📖 ${v.original||"-"}</div><div style="font-size:10px;color:#94a3b8">✏️ ${v.new_example||"-"}</div></details></div>`;
   });
-  resultsDiv.innerHTML=h+"</div>";
+  resultsDiv.appendChild(grid);
+
+  const mkSection=function(title,content){
+    const d=document.createElement("div");d.style.cssText="margin-bottom:12px";
+    const h=document.createElement("div");h.className="sec-hdr";h.textContent="▶ "+title;
+    const b=document.createElement("div");b.innerHTML=content;
+    h.onclick=function(){const v=b.style.display!=='none';b.style.display=v?'none':'block';h.textContent=(v?'▶':'▼')+title};
+    d.appendChild(h);d.appendChild(b);resultsDiv.appendChild(d);
+  };
+
+  // Pronunciation
+  let pron="";
+  (data.pronunciation||[]).forEach(function(p,i){pron+=`<div class="card" style="font-size:11px"><span style="color:#f1f5f9">${i+1}. ${p.written}</span> → <strong style="color:#4ade80">${p.natural}</strong> <span style="color:#94a3b8">- ${p.rule}</span></div>`});
+  if(data.pronunciation_sentence){pron+=`<div class="card" style="font-size:11px"><strong>全句音标:</strong><br><span style="color:#fbbf24">${(data.pronunciation_sentence.phonetic||"").slice(0,200)}</span><br><span style="color:#60a5fa">${(data.pronunciation_sentence.annotations||[]).join("<br>")}</span></div>`}
+  mkSection("🔊 Connected Speech 语音音变(8条+全句音标)",pron);
+
+  // Rhythm
+  let rh="";
+  (data.rhythm||[]).forEach(function(r){rh+=`<div class="card" style="font-size:11px"><span style="font-family:monospace;color:#fbbf24">${r.mark}</span><br><span style="color:#cbd5e1">${r.sentence}</span></div>`});
+  mkSection("🎵 Sentence Rhythm 句子节奏",rh);
+
+  // Chunks
+  let ch="";
+  (data.chunks||[]).forEach(function(c){ch+=`<div class="card" style="font-size:11px"><strong style="color:#a78bfa">${c.chunk}</strong> <span style="color:#fbbf24">${c.frequency||""}</span><div style="color:#94a3b8">${(c.variations||[]).join(" / ")}</div><div style="color:#cbd5e1">${(c.examples||[]).map(e=>"• "+e).join("<br>")}</div></div>`});
+  mkSection("🧩 Chunks & Collocations 语块(6个)",ch);
+
+  // Synonym Discrimination
+  let syn="";
+  (data.synonym_discrimination||[]).forEach(function(g){syn+=`<div class="card" style="font-size:11px"><strong style="color:#a78bfa">${g.group}</strong><div style="color:#cbd5e1">共同: ${g.common_meaning}</div><div style="color:#94a3b8">${(g.cards||[]).map(c=>"• "+c.word+"("+c.register+", "+c.collocation+")").join("<br>")}</div><div style="color:#60a5fa">💡 ${g.substitutable||"-"}</div><div style="color:#f87171">⚠️ ${g.common_error||"-"}</div></div>`});
+  mkSection("🔄 Synonym Discrimination 同义辨析(2-3组)",syn);
+
+  // Practice
+  let pr="";
+  (data.practice.style_swap||[]).forEach(function(s){pr+=`<div class="card" style="font-size:11px"><span style="color:#cbd5e1">🗣 ${s.informal}</span><br><span style="color:#93c5fd">📊 ${s.formal}</span></div>`});
+  pr+="<div style=\"font-size:11px;color:#cbd5e1;margin-top:8px\"><strong>跟读三步法:</strong><br>"+((data.practice.shadowing||[]).map((s,i)=>(i+1)+". "+s).join("<br>"))+"</div>";
+  pr+="<div style=\"font-size:11px;color:#cbd5e1;margin-top:8px\"><strong>造句挑战:</strong><br>"+(data.practice.challenges||[]).map(c=>"✍️ "+c).join("<br>")+"</div>";
+  mkSection("✍️ Practice 练习",pr);
+
+  resultsDiv.scrollIntoView({behavior:"smooth"});
 }
 
-var FALLBACK=["A simple guide to healthy eating. Many people want to eat better but do not know where to start. Eating healthy does not have to be difficult or expensive. Here are some simple tips that anyone can follow. First, try to eat more fruits and vegetables. Experts recommend eating at least five portions every day. They contain important vitamins and minerals. Second, drink enough water. Water is essential for every function in your body. Most adults should drink about eight glasses each day. Third, reduce processed foods. These contain too much sugar and unhealthy fats. Choose whole foods instead.","Walking is one of the simplest forms of exercise. You do not need special equipment. Just thirty minutes a day strengthens your heart and lungs. It also improves mood and reduces stress. Start slowly and gradually increase."];
-fab.onclick=function(){ta.value=FALLBACK[Math.floor(Math.random()*FALLBACK.length)];counter.textContent=ta.value.split(/\s+/).filter(Boolean).length+" 词"};
+// FAB
+var FALLBACK=["A simple guide to healthy eating\n\nMany people want to eat better but do not know where to start. Eating healthy does not have to be difficult or expensive. Here are some simple tips anyone can follow.\n\nFirst, try to eat more fruits and vegetables. Experts recommend eating at least five portions every day. They contain important vitamins and minerals that help your body stay strong and fight illness.\n\nSecond, drink enough water. Water is essential for every function in your body. It helps digestion, keeps your skin clear, and gives you energy. Most adults should drink about eight glasses each day.\n\nThird, reduce your intake of processed foods. These foods often contain too much sugar, salt, and unhealthy fats. Instead, choose whole foods like brown rice, oats, and whole wheat bread.\n\nFinally, do not skip breakfast. A good breakfast gives you the energy you need to start your day. Include protein like eggs or yogurt along with some fruit.","The benefits of walking every day\n\nWalking is one of the simplest and most effective forms of exercise. You do not need special equipment or a gym membership. All you need is comfortable shoes and a place to walk.\n\nStudies show that walking thirty minutes a day improves your health in many ways. It strengthens your heart and lungs, helps control weight, and can reduce feelings of stress and anxiety.\n\nIf you are new to walking, start slowly with ten or fifteen minutes. Gradually increase as your fitness improves. Walk at a pace that makes you breathe harder but still allows you to talk.\n\nWalking outdoors has additional benefits. Fresh air and natural sunlight boost mood and help produce vitamin D.","How to get better sleep\n\nSleep is essential for both physical and mental health. Most adults need seven to nine hours of sleep each night. However, many people struggle to get enough quality sleep.\n\nOne important thing is maintaining a regular sleep schedule. Go to bed and wake up at the same time every day, even on weekends. This helps regulate your body internal clock.\n\nCreate a relaxing bedtime routine. Avoid screens for at least an hour before bed. The blue light can interfere with sleep. Keep your bedroom cool, dark, and quiet. Avoid caffeine and alcohol close to bedtime."];
+fab.onclick=function(){ta.value=FALLBACK[Math.floor(Math.random()*FALLBACK.length)];counter.textContent=ta.value.trim().split(/\s+/).filter(Boolean).length+" 词"};
 </script>
 </body>
 </html>
