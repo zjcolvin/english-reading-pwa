@@ -69,7 +69,7 @@ function analyze(text,key){
   resultsDiv.innerHTML="<div style=\"color:#94a3b8\">分析中...</div>";
   errorDiv.textContent="";
   var prompt="从以下英语文本提取8个核心A2-B1词汇。严格按照JSON格式输出(只输出JSON,不要markdown):{vocab:[{word:\"单词\",ipa:\"/音标/\",pos:\"n./v./adj.\",cambridge:\"Cambridge英文释义20词内\",chinese:\"中文释义\",register:\"口语/书面/通用\",memory:\"词根联想助记15字内\",synonyms_a2:\"A2基础词\",synonyms_natural:\"口语版\",synonyms_formal:\"正式版\",collocations:[\"搭配1\",\"搭配2\"],original:\"原文例句\",new_example:\"新造句\"}]}。文本:"+text.slice(0,3000);
-  fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},body:JSON.stringify({model:"llama3-8b-8192",messages:[{role:"user",content:prompt}],temperature:0.3,maxTokens:1500})}).then(function(r){return r.ok?r.json():Promise.reject("API "+r.status)}).then(function(d){var c=d.choices[0].message.content;renderVocab(JSON.parse(c).vocab)}).catch(function(e){showError(typeof e==="string"?e:e.message);resultsDiv.innerHTML=""});
+  fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},body:JSON.stringify({model:"llama-3.3-70b-versatile",messages:[{role:"user",content:prompt}],temperature:0.3,maxTokens:1500})}).then(function(r){return r.ok?r.json():Promise.reject("API "+r.status)}).then(function(d){var c=d.choices[0].message.content;renderVocab(JSON.parse(c).vocab)}).catch(function(e){showError(typeof e==="string"?e:e.message);resultsDiv.innerHTML=""});
 }
 
 function renderVocab(vocab){
