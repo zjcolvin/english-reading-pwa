@@ -2,124 +2,98 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8"/>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='8' y='12' width='48' height='40' rx='4' fill='%231e3a8a'/><rect x='12' y='16' width='40' height='32' rx='2' fill='%23f8fafc'/><circle cx='48' cy='40' r='8' fill='%2310b981'/></svg>"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<meta name="theme-color" content="#1e293a"/>
 <title>英语精读</title>
 <style>
-:root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
-*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#e2e8f0}
-#root{min-height:100vh;min-height:100dvh}button{font-family:inherit}textarea{font-family:inherit}
+*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+.container{max-width:800px;margin:0 auto;padding:16px 16px 80px}
+textarea{width:100%;height:150px;padding:12px;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#e2e8f0;font-size:14px;resize:vertical}
+button{cursor:pointer;font-family:inherit}
+.btn-row{display:flex;gap:8px;margin-top:10px;align-items:center}
+.fab{position:fixed;bottom:20px;right:20px;padding:12px 18px;background:#7c3aed;border-radius:30px;color:#fff;font-size:13px;font-weight:700;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:9999}
+.card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:10px 12px;margin-bottom:8px}
 </style>
 </head>
 <body>
-<div id="root"></div>
-<script crossorigin src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
-<script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+<div class="container">
+<h1>📖 英语精读</h1>
+<div id="status" style="font-size:12px;color:#64748b;margin-bottom:12px">✓ 页面加载成功</div>
+<textarea id="ta" placeholder="粘贴英语原文(100-300词)..."></textarea>
+<div class="btn-row">
+  <div style="font-size:12px;color:#64748b" id="counter">0 词</div>
+  <button id="analyze" style="padding:10px 24px;background:#3b82f6;border:none;border-radius:8px;color:#fff;font-weight:600;font-size:14px">开始分析</button>
+</div>
+<div id="error" style="margin-top:12px;font-size:13px;color:#fecaca"></div>
+<div id="results" style="margin-top:20px"></div>
+</div>
+<button class="fab" id="fab">🔍 自动找新闻</button>
+
 <script>
-const GROQ_KEY = localStorage.getItem("groq_api_key") || "";
-const FALLBACK = [
-  "A simple guide to healthy eating\n\nMany people want to eat better but do not know where to start. Eating healthy does not have to be difficult. Here are some simple tips.\n\nFirst, eat more fruits and vegetables. Experts recommend five portions every day. They contain vitamins and minerals that help your body stay strong.\n\nSecond, drink enough water. Water is essential for every function in your body. Most adults should drink eight glasses each day.\n\nThird, reduce processed foods. These contain too much sugar, salt, and unhealthy fats. Choose whole foods like brown rice and oats.\n\nFinally, do not skip breakfast. A good breakfast gives you energy. Include protein like eggs or yogurt.",
-  "The benefits of walking every day\n\nWalking is one of the simplest forms of exercise. You do not need special equipment or a gym membership.\n\nStudies show walking thirty minutes a day strengthens your heart and lungs. It helps control weight and improves mood.\n\nStart slowly with ten or fifteen minutes. Gradually increase as your fitness improves.\n\nWalking outdoors has additional benefits. Fresh air and sunlight boost mood and help produce vitamin D.",
-  "How to get better sleep\n\nSleep is essential for health. Most adults need seven to nine hours each night.\n\nMaintain a regular sleep schedule. Go to bed and wake up at the same time every day.\n\nAvoid screens for at least an hour before bed. Blue light can interfere with sleep.\n\nKeep your bedroom cool, dark, and quiet. Avoid caffeine and alcohol close to bedtime."
-];
+var ta = document.getElementById("ta");
+var analyzeBtn = document.getElementById("analyze");
+var statusDiv = document.getElementById("status");
+var errorDiv = document.getElementById("error");
+var resultsDiv = document.getElementById("results");
+var counter = document.getElementById("counter");
 
-function App(){
-  const [text,setText] = React.useState("");
-  const [result,setResult] = React.useState(null);
-  const [error,setError] = React.useState(null);
-  const [analyzing,setAnalyzing] = React.useState(false);
-  const [showKey,setShowKey] = React.useState(false);
-  const [key,setKey] = React.useState(GROQ_KEY);
+ta.addEventListener("input", function(){
+  counter.textContent = ta.value.trim().split(/\s+/).filter(Boolean).length + " 词";
+});
 
-  const saveKey=()=>{localStorage.setItem("groq_api_key",key.trim());setShowKey(false);};
+analyzeBtn.onclick = function(){
+  var text = ta.value.trim();
+  if(text.length < 20){ showError("文本太短,至少20词"); return; }
+  var key = localStorage.getItem("groq_api_key") || "";
+  if(!key){ showError("请先配置 API Key(顶部按钮)"); return; }
+  analyze(text, key);
+};
+
+function showError(msg){ errorDiv.textContent = "⚠️ " + msg; }
+
+function analyze(text, key){
+  resultsDiv.innerHTML = "<div style='color:#94a3b8'>分析中...</div>";
+  errorDiv.textContent = "";
   
-  const analyze=async()=>{
-    if(!text.trim()||text.length<20)return;
-    if(!key){setShowKey(true);return;}
-    setAnalyzing(true);setError(null);setResult(null);
-    try{
-      const prompt='从以下英语文本中提取8个核心A2-B1词汇。严格输出JSON格式:{vocab:[{word:"单词",ipa:"/音标/",pos:"n./v./adj.",cambridge:"Cambridge英文释义20词内",chinese:"中文释义",register:"口语/书面/通用",memory:"词根联想助记15字内",synonyms_a2:"A2基础词",synonyms_natural:"口语版",synonyms_formal:"正式版",collocations:["搭配1","搭配2"],original:"原文例句",new_example:"新造句"}]}。文本:'+text.slice(0,3000);
-      const res=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},body:JSON.stringify({model:"llama-3.3-70b-versatile",messages:[{role:"user",content:prompt}],temperature:0.3,maxTokens:2000})});
-      if(!res.ok){const err=await res.text().catch(()=>"");throw new Error("API "+res.status+" "+err.slice(0,60));}
-      const data=await res.json();
-      const content=data.choices[0].message.content;
-      let p=JSON.parse(content);
-      if(!p.vocab)throw new Error("No vocab");setResult(p);
-    }catch(e){setError(e.message);}finally{setAnalyzing(false);}
-  };
-
-  return React.createElement("div",{style:{maxWidth:800,margin:"0 auto",padding:"16px 16px 80px"}},
-    React.createElement("header",{style:{marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}},
-      React.createElement("div",null,React.createElement("h1",{style:{margin:0,fontSize:20,fontWeight:700}},"📖 英语精读"),React.createElement("div",{style:{fontSize:12,color:"#64748b",marginTop:4}},"A2-B1 精读笔记")),
-      React.createElement("button",{onClick:()=>setShowKey(!showKey),style:{padding:"6px 14px",background:key?"#10b98133":"#ef444433",border:"1px solid "+(key?"#10b981":"#ef4444"),borderRadius:6,color:key?"#34d399":"#fca5a5",cursor:"pointer",fontSize:12}},key?"✓ 已配置":"⚙️ API Key")
-    ),
-    showKey&&React.createElement("div",{style:{background:"#1e293b",border:"1px solid #3b82f6",borderRadius:12,padding:14,marginBottom:16}},
-      React.createElement("div",{style:{fontSize:13,color:"#93c5fd",marginBottom:8}},"⚙️ Groq API Key"),
-      React.createElement("div",{style:{display:"flex",gap:8}},
-        React.createElement("input",{type:"password",value:key,onChange:e=>setKey(e.target.value),placeholder:"gsk_...",style:{flex:1,padding:"8px 12px",background:"#0f172a",border:"1px solid #334155",borderRadius:6,color:"#e2e8f0",fontSize:13}}),
-        React.createElement("button",{onClick:saveKey,disabled:!key.trim(),style:{padding:"8px 16px",background:key.trim()?"#3b82f6":"#475569",border:"none",borderRadius:6,color:"#fff",cursor:key.trim()?"pointer":"wait",fontSize:13}},"保存")
-      )
-    ),
-    React.createElement("textarea",{value:text,onChange:e=>setText(e.target.value),placeholder:"粘贴英语原文(100-300词)...",style:{width:"100%",height:150,padding:"12px 14px",background:"#1e293b",border:"1px solid #334155",borderRadius:10,color:"#e2e8f0",fontSize:14,resize:"vertical"}}),
-    React.createElement("div",{style:{marginTop:10,display:"flex",justifyContent:"space-between",alignItems:"center"}},
-      React.createElement("div",{style:{fontSize:12,color:"#64748b"}},text.length+" 词"),
-      React.createElement("button",{onClick:analyze,disabled:analyzing||text.length<20||!key,style:{padding:"10px 24px",background:(analyzing||text.length<20||!key)?"#475569":"#3b82f6",border:"none",borderRadius:8,color:"#fff",fontWeight:600,cursor:(analyzing||text.length<20||!key)?"wait":"pointer",fontSize:14}},analyzing?"分析中...":!key?"请先配置 API":"开始分析")
-    ),
-    error&&React.createElement("div",{style:{marginTop:16,padding:"10px 14px",background:"#7f1d1d",color:"#fecaca",borderRadius:8,fontSize:13}},"⚠️ "+error),
-    result&&React.createElement("div",{style:{marginTop:20}},React.createElement("h3",{style:{margin:"0 0 10px",fontSize:15,color:"#4ade80"}},"📝 词汇学习("+result.vocab.length+"词)"),
-      React.createElement("div",{style:{display:"grid",grid-template-columns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}},
-        result.vocab.map((v,i)=>React.createElement("div",{key:i,style:{background:"#1e293b",border:"1px solid #334155",borderRadius:10,padding:"10px 12px"}},
-          React.createElement("div",{style:{display:"flex",alignItems:"center",gap:6,marginBottom:4}},
-            React.createElement("strong",{style:{fontSize:16,color:"#f1f5f9"}},v.word),
-            React.createElement("span",{style:{fontSize:11,color:"#fbbf24"}},v.pos||""),
-            React.createElement("span",{style:{fontSize:10,color:"#94a3b8"}},v.ipa||""),
-            React.createElement("span",{style:{fontSize:9,padding:"1px 5px",background:"#334155",borderRadius:3,color:"#94a3b8"}},v.register||"通用")
-          ),
-          React.createElement("div",{style:{fontSize:12,color:"#cbd5e1"}},v.chinese),
-          React.createElement("div",{style:{fontSize:11,color:"#94a3b8",fontStyle:"italic"}},v.cambridge||""),
-          React.createElement("div",{style:{fontSize:10,color:"#a78bfa",marginTop:3}},"💡 "+(v.memory||"—")),
-          React.createElement("div",{style:{fontSize:10,color:"#60a5fa",marginTop:3}},"🔄 "+(v.synonyms_a2||"—")+" → "+(v.synonyms_natural||"—")+" → "+(v.synonyms_formal||"—")),
-          React.createElement("div",{style:{fontSize:10,color:"#34d399",marginTop:3}},"🔗 "+((v.collocations||[]).join(" / ")||"—")),
-          React.createElement("details",{style:{marginTop:4}},React.createElement("summary",{style:{fontSize:10,color:"#60a5fa",cursor:"pointer"}},"例句"),React.createElement("div",{style:{fontSize:10,color:"#cbd5e1",marginTop:3}},React.createElement("div",null,"📖 "+(v.original||"—")),React.createElement("div",{color:"#94a3b8"},"✏️ "+(v.new_example||"—"))))
-        ))
-      )),
-    ),
-    React.createElement(FAB,{setText})
-  )
+  var prompt = "从以下英语文本提取8个核心A2-B1词汇。严格按照JSON格式输出(只输出JSON,不要markdown):{vocab:[{word:"单词",ipa:"/音标/",pos:"n./v./adj.",cambridge:"Cambridge英文释义20词内",chinese:"中文释义",register:"口语/书面/通用",memory:"词根联想助记15字内",synonyms_a2:"A2基础词",synonyms_natural:"口语版",synonyms_formal:"正式版",collocations:["搭配1","搭配2"],original:"原文例句",new_example:"新造句"}]}。文本:" + text.slice(0,3000);
+  
+  fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method:"POST", headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},
+    body: JSON.stringify({model:"llama-3.3-70b-versatile", messages:[{role:"user",content:prompt}], temperature:0.3, maxTokens:2000})
+  }).then(function(r){ return r.ok ? r.json() : Promise.reject("API "+r.status); })
+  .then(function(d){
+    var content = d.choices[0].message.content;
+    var parsed = JSON.parse(content);
+    renderVocab(parsed.vocab);
+  }).catch(function(e){
+    showError(typeof e === "string" ? e : e.message);
+    resultsDiv.innerHTML = "";
+  });
 }
 
-function FAB({setText}){
-  const [s,setS] = React.useState("");
-  const setVal=(v)=>{const el=document.querySelector("textarea");if(!el)return;const st=Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,"value").set;st.call(el,v);el.dispatchEvent(new Event("input",{bubbles:true}));el.dispatchEvent(new Event("change",{bubbles:true}));};
-  const run=async()=>{
-    setS("搜索...");
-    try{
-      const r=await fetch("https://api.tavily.com/search",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer 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"},body:JSON.stringify({query:"site:learningenglish.voanews.com OR site:bbc.co.uk/learningenglish",search_depth:"basic",max_results:5})});
-      if(!r.ok)throw new Error("x");
-      const d=await r.json();
-      const rs=d.results||[];
-      for(const u of rs.slice(0,4)){
-        if(!u.url)continue;
-        const fr=await fetch("https://api.firecrawl.dev/v1/scrape",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer fc-7983f837af0d465692f1e44f22b517d4"},body:JSON.stringify({url:u.url,formats:["markdown"],onlyMainContent:true})});
-        if(!fr.ok)continue;
-        const fd=await fr.json();
-        let md=fd.data?.markdown||"";
-        if(md.length<300)continue;
-        md=md.replace(/!\[.*?\]\(.*?\)/g,"").replace(/\[([^\]]+)\]\([^)]+\)/g,"$1").replace(/^#+\s+$/gm,"").replace(/
-{3,}/g,"
-
-").slice(150,2500);
-        if(md.length>200){setVal(md);setS("✓");return;}
-      }
-      throw new Error("x");
-    }catch(e){const fc=FALLBACK[Math.floor(Math.random()*FALLBACK.length)];setVal(fc);setS("✓(内置)");}
-    finally{setTimeout(()=>setS(""),2000);}
-  };
-  return React.createElement("div",{onClick:run,style:{position:"fixed",bottom:20,right:20,padding:"12px 18px",background:s.includes("✓")?"#059669":"#7c3aed",borderRadius:30,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:700,boxShadow:"0 4px 12px rgba(0,0,0,0.3)",zIndex:9999,userSelect:"none"}},s||"🔍 自动找新闻");
+function renderVocab(vocab){
+  resultsDiv.innerHTML = "<h3 style='color:#4ade80'>📝 词汇学习(" + vocab.length + "词)</h3>" +
+    "<div style='display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px'>";
+  vocab.forEach(function(v){
+    resultsDiv.innerHTML += "<div class='card'>" +
+      "<div style='font-size:15px;font-weight:700;color:#f1f5f9'>" + v.word + " <span style='font-size:11px;color:#fbbf24'>" + (v.pos||"") + "</span> <span style='font-size:10px;color:#94a3b8'>" + (v.ipa||"") + "</span></div>" +
+      "<div style='font-size:12px;color:#cbd5e1'>" + v.chinese + "</div>" +
+      "<div style='font-size:10px;color:#a78bfa'>💡 " + (v.memory||"-") + "</div>" +
+      "<div style='font-size:10px;color:#60a5fa'>🔄 " + (v.synonyms_a2||"-") + " → " + (v.synonyms_natural||"-") + "</div>" +
+      "<div style='font-size:10px;color:#cbd5e1;margin-top:4px'>📖 " + (v.original||"-").slice(0,60) + "</div>" +
+      "</div>";
+  });
+  resultsDiv.innerHTML += "</div>";
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+// FAB
+var FALLBACK = [
+  "A simple guide to healthy eating. Many people want to eat better. Eat more fruits and vegetables. Drink enough water. Reduce processed foods. Do not skip breakfast.",
+  "Walking is simple exercise. Walk thirty minutes daily. Strengthens heart and lungs. Improves mood. Start slowly."
+];
+document.getElementById("fab").onclick = function(){
+  ta.value = FALLBACK[Math.floor(Math.random()*FALLBACK.length)];
+  counter.textContent = ta.value.split(/\s+/).filter(Boolean).length + " 词";
+};
 </script>
 </body>
 </html>
