@@ -391,8 +391,9 @@ Rules:
 
 
 
+
 <script>
-// Auto news: search → analyze → auto-fill best match
+// Auto news v2 - robust fallback + clear error messages
 (function(){
   const TAVILY_KEY = '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'
   
@@ -403,14 +404,15 @@ Rules:
   fab.onmouseenter = () => fab.style.background = '#6d28d9'
   fab.onmouseleave = () => fab.style.background = '#7c3aed'
   fab.onclick = async () => {
-    // Switch to 新建笔记 tab
     document.querySelectorAll('button').forEach(t => { if(t.textContent.includes('新建笔记')) t.click() })
-    
-    fab.disabled = true
-    fab.textContent = '⏳ 搜索分析中...'
-    
+    fab.disabled = true; fab.textContent = '⏳...'
     const ta = document.querySelector('textarea')
-    if(ta){ ta.value = '正在搜索并分析英语新闻,请稍候...(约30-60秒)'; ta.focus() }
+    
+    const showMsg = (msg, isError) => {
+      if(ta){ ta.value = ''; ta.placeholder = msg }
+      fab.style.background = isError ? '#dc2626' : '#7c3aed'
+      setTimeout(() => { fab.style.background = '#7c3aed' }, 2000)
+    }
     
     try{
       // Step 1: Search
@@ -418,40 +420,39 @@ Rules:
         method:'POST',
         headers:{'Content-Type':'application/json','Authorization':`Bearer ${TAVILY_KEY}`},
         body: JSON.stringify({
-          query:'English news article simple ESL A2 B1 learners everyday topics',
+          query:'English news simple ESL learners everyday life science health',
           search_depth:'advanced',
           include_answer:'basic',
-          include_raw_content:true,
-          max_results:6
+          max_results:8
         })
       })
-      if(!res.ok) throw new Error('Tavily '+res.status)
+      if(!res.ok) throw new Error('搜索服务异常 HTTP '+res.status)
       const data = await res.json()
       const results = data.results || []
+      if(results.length === 0) throw new Error('搜索无结果')
       
       const apiKey = localStorage.getItem('groq_api_key')
+      if(!apiKey){ showMsg('请先配置 Groq API Key(点右上角按钮)', true); throw new Error('no key') }
+      
       let bestExcerpt = ''
       let bestInfo = ''
+      const errors = []
       
-      for(const r of results.slice(0,5)){
-        const raw = (r.raw_content || r.content || r.answer || '').slice(0,8000)
-        if(raw.length < 300) continue
+      for(const r of results.slice(0,6)){
+        const raw = (r.content || r.answer || '').slice(0,6000)
+        if(raw.length < 200) continue
         
-        if(!apiKey) continue
-        
-        const prompt = `你是一个英语精读素材编辑。从以下文章中提取最适合A2-B1级别学习者的精读正文段落。
+        const prompt = `分析以下英语文章,提取最适合A2-B1精读的正文段落。
 
-严格规则:
-1. 只保留正文内容!完全去掉标题、日期、作者、来源、网站名、版权声明等所有非正文信息
-2. 截取连续的完整段落(不要跳段、不要拼接不同部分)
-3. 长度必须是200-350个英文单词
-4. 确保段落完整、有意义、可独立阅读
-5. 优先选择有教育意义、日常话题、有完整叙事的内容
+规则:
+1. 只保留正文!去掉标题/日期/作者/来源/网站名/广告
+2. 连续完整段落,不跳段不拼接
+3. 200-350英文单词
+4. 完整、有意义、可独立阅读
 
-原文:
-${raw.slice(0,6000)}
+文章:${raw.slice(0,5000)}
 
-只输出JSON:{word_count:数字(词数),difficulty:A2或B1或B2,topic:中文6字内,excerpt:提取的纯正文段落}` 
+只输出JSON:{word_count:数字,difficulty:A2/B1/B2,topic:中文6字,excerpt:纯正文段落}`
         
         try{
           const ar = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -459,52 +460,48 @@ ${raw.slice(0,6000)}
             body: JSON.stringify({
               model:'qwen/qwen3-32b',
               messages:[{role:'user',content:prompt}],
-              temperature:0.2, maxTokens:1500, response_format:{type:'json_object'}
+              temperature:0.3, maxTokens:1200, response_format:{type:'json_object'}
             })
           })
+          if(!ar.ok){ errors.push('LLM '+ar.status); continue }
           const ad = await ar.json()
-          const analysis = JSON.parse(ad.choices[0].message.content)
+          const text = ad.choices && ad.choices[0] && ad.choices[0].message && ad.choices[0].message.content
+          if(!text){ errors.push('empty'); continue }
+          const analysis = JSON.parse(text)
           const wc = analysis.word_count || (analysis.excerpt||'').split(/\s+/).length
-          
-          // Want 200-350 words
-          if(wc >= 150 && wc <= 500 && analysis.excerpt){
+          if(wc >= 120 && analysis.excerpt && analysis.excerpt.length > 500){
             bestExcerpt = analysis.excerpt
-            bestInfo = `${analysis.topic}·${analysis.difficulty}·${wc}词`
-            break // Found good one, stop
+            bestInfo = analysis.topic+'·'+analysis.difficulty+'·'+wc+'词'
+            break
           }
-        }catch(e){ continue }
+        }catch(e){ errors.push(e.message.slice(0,30)) }
       }
       
       if(ta){
         if(bestExcerpt){
           ta.value = bestExcerpt
           ta.focus()
-          // Show info briefly
-          const info = document.createElement('div')
-          info.id = 'news-info'
-          info.style.cssText = 'font-size:11px;color:#60a5fa;padding:4px 0'
-          info.textContent = `✓ ${bestInfo}`
-          ta.parentElement.insertBefore(info, ta)
-          setTimeout(() => { const el = document.getElementById('news-info'); if(el) el.remove() }, 5000)
         } else {
-          ta.value = ''
-          ta.placeholder = '未找到合适素材,请手动粘贴英文原文...'
+          // Fallback: use raw content from first result
+          const firstRaw = (results[0].content || results[0].answer || '').slice(0,2000)
+          if(firstRaw.length > 200){
+            ta.value = firstRaw
+            ta.placeholder = '⚠️ 自动分析失败,使用原始片段(共'+results.length+'条)'
+          } else {
+            ta.placeholder = '❌ 未找到合适素材:' + (errors[0] || '内容太短')
+          }
         }
       }
       
     }catch(e){
-      if(ta){ ta.value = ''; ta.placeholder = '搜索失败:'+e.message }
+      showMsg('❌ '+e.message, true)
     }finally{
-      fab.disabled = false
-      fab.textContent = '🔍 自动找新闻'
+      fab.disabled = false; fab.textContent = '🔍 自动找新闻'
     }
   }
   
-  if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', () => document.body.appendChild(fab))
-  } else {
-    document.body.appendChild(fab)
-  }
+  if(document.readyState === 'loading'){ document.addEventListener('DOMContentLoaded', ()=>document.body.appendChild(fab)) }
+  else { document.body.appendChild(fab) }
 })()
 
 </script>
