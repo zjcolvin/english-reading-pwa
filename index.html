@@ -262,5 +262,131 @@ Rules:
 })()
 
 </script>
+<script>
+(function(){
+  const TAVILY_KEY = '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'
+  
+  function tryInject(){
+    // Only inject if not already there
+    if(document.getElementById('news-discover-btn')) return
+    
+    const ta = document.querySelector('textarea')
+    if(!ta) return
+    
+    const container = ta.parentElement
+    
+    // Create button row ABOVE textarea
+    const wrapper = document.createElement('div')
+    wrapper.id = 'news-wrapper'
+    wrapper.style.cssText = 'margin-bottom:8px'
+    
+    const row = document.createElement('div')
+    row.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap'
+    
+    const btn = document.createElement('button')
+    btn.id = 'news-discover-btn'
+    btn.textContent = '🔍 发现新闻素材'
+    btn.style.cssText = 'padding:8px 16px;background:#7c3aed;border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:13px;font-weight:600'
+    
+    const status = document.createElement('div')
+    status.id = 'news-status'
+    status.style.cssText = 'font-size:12px;color:#94a3b8'
+    
+    btn.onclick = async () => {
+      btn.disabled = true; btn.textContent = '⏳ 搜索中...'
+      status.textContent = ''
+      let panel = document.getElementById('news-results')
+      if(!panel){
+        panel = document.createElement('div')
+        panel.id = 'news-results'
+        panel.style.cssText = 'margin-top:8px;display:flex;flex-direction:column;gap:8px'
+        wrapper.appendChild(panel)
+      }
+      panel.innerHTML = ''
+      
+      try{
+        const res = await fetch('https://api.tavily.com/search', {
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':`Bearer ${TAVILY_KEY}`},
+          body: JSON.stringify({
+            query:'English news simple ESL learners A2 B1',
+            search_depth:'advanced',
+            include_answer:'basic',
+            max_results:5
+          })
+        })
+        if(!res.ok) throw new Error('Tavily '+res.status)
+        const data = await res.json()
+        const results = data.results || []
+        status.textContent = `找到 ${results.length} 条,分析中...'
+        
+        const apiKey = localStorage.getItem('groq_api_key')
+        const items = []
+        
+        for(const r of results.slice(0,3)){
+          const raw = (r.content || r.answer || '').slice(0,3000)
+          if(raw.length < 80) continue
+          let analysis = { suitable:true, wordCount:raw.split(/\s+/).length, difficulty:'B1', topic:'General', excerpt:raw.slice(0,500) }
+          if(apiKey){
+            try{
+              const ar = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${apiKey}`},
+                body: JSON.stringify({
+                  model:'qwen/qwen3-32b',
+                  messages:[{role:'user',content:`分析这篇英语文章是否适合作A2-B1精读。只输出JSON:{suitable(true/false),wordCount(A1/A2/B1/B2),topic(中文8字),excerpt(原文截取最佳200-400字段落)}\n标题:${r.title}\n内容:${raw.slice(0,2500)}`}],
+                  temperature:0.3, maxTokens:512, response_format:{type:'json_object'}
+                })
+              })
+              const ad = await ar.json()
+              analysis = JSON.parse(ad.choices[0].message.content)
+            }catch(e){}
+          }
+          items.push({
+            title: r.title, fullContent: raw,
+            suitable: analysis.suitable !== false,
+            wordCount: analysis.wordCount || raw.split(/\s+/).length,
+            difficulty: analysis.difficulty || 'B1',
+            topic: analysis.topic || 'General',
+            excerpt: analysis.excerpt || raw.slice(0,500)
+          })
+        }
+        
+        const suitable = items.filter(i => i.suitable)
+        panel.innerHTML = ''
+        
+        if(!suitable.length){
+          status.textContent = '未找到合适素材,试试手动粘贴'
+        } else {
+          status.textContent = `✓ 点击填入:`
+          suitable.forEach(item => {
+            const card = document.createElement('div')
+            card.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:10px;padding:10px 12px;cursor:pointer'
+            card.innerHTML = `<div style="font-size:12px;font-weight:600;color:#f1f5f9">${item.title}</div><div style="font-size:10px;color:#94a3b8">${item.topic}·${item.difficulty}·~${item.wordCount}词</div><div style="font-size:11px;color:#cbd5e1;margin-top:3">${(item.excerpt||item.fullContent).slice(0,120)}...</div>`
+            card.onclick = () => {
+              ta.value = item.excerpt || item.fullContent.slice(0,2000)
+              ta.focus()
+              window.scrollTo({top: ta.offsetTop - 80, behavior:'smooth'})
+            }
+            panel.appendChild(card)
+          })
+        }
+      }catch(e){
+        status.textContent = '错误: '+e.message
+      }finally{
+        btn.disabled = false; btn.textContent = '🔍 发现新闻素材'
+      }
+    }
+    
+    row.appendChild(btn)
+    row.appendChild(status)
+    wrapper.appendChild(row)
+    container.insertBefore(wrapper, ta)
+  }
+  
+  // Try every 800ms
+  setInterval(tryInject, 800)
+})()
+
+</script>
 </body>
 </html>
