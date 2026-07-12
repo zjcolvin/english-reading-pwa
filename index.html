@@ -495,8 +495,11 @@ Rules:
 </script>
 
 
+
+
+
 <script>
-// Auto news v4 - simplified, robust
+// Auto News v5 - strict content extraction + clean body only
 (function(){
   const TAVILY_KEY = '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'
   
@@ -519,59 +522,72 @@ Rules:
     }
     
     try{
-      // Simple search without time_range (may not be supported in free tier)
-      const res = await fetch('https://api.tavily.com/search', {
+      // Step 1: Search with specific query for clean content
+      const searchRes = await fetch('https://api.tavily.com/search', {
         method:'POST',
         headers:{'Content-Type':'application/json','Authorization':`Bearer ${TAVILY_KEY}`},
-        body: JSON.stringify({
-          query:'English news article lifestyle health technology travel food',
+        body:JSON.stringify({
+          query:'site:bbc.com OR site:reuters.com OR site:apnews.com OR site:npr.org simple English news lifestyle health technology 2025',
           search_depth:'advanced',
           include_answer:'basic',
-          max_results:5
+          max_results:6
         })
       })
-      
-      if(!res.ok){
-        const err = await res.text().catch(() => '')
-        throw new Error(`Tavily HTTP ${res.status} ${err.slice(0,100)}`)
-      }
-      const data = await res.json()
-      const results = data.results || []
-      
-      if(!results.length) throw new Error('搜索无结果,请稍后重试')
+      if(!searchRes.ok) throw new Error('搜索失败 HTTP '+searchRes.ok)
+      const searchData = await searchRes.json()
+      const results = searchData.results || []
+      if(!results.length) throw new Error('无搜索结果')
       
       const apiKey = localStorage.getItem('groq_api_key')
       if(!apiKey){ if(ta) ta.placeholder='请先配置 Groq API Key'; throw new Error('no key') }
       
+      // Step 2: Try each result until we get clean body text
       let bestExcerpt = ''
-      let bestInfo = ''
       
       for(const r of results.slice(0,5)){
-        const raw = (r.content || r.answer || '').slice(0,6000)
-        if(raw.length < 200) continue
+        const raw = (r.content || r.answer || '').slice(0,8000)
+        if(raw.length < 300) continue
         
-        const prompt = `提取最适合A2-B1精读的正文段落。规则:1)只保留正文去掉标题日期来源 2)连续完整 3)200-350词 4)避开政治/战争/暴力。只输出JSON:{suitable:boolean,topic:中文6字,reason:10字,word_count:数字,difficulty:A2/B1/B2,excerpt:纯正文}。文章:${raw.slice(0,5000)}`
-        
+        // Aggressive cleaning prompt
+        const prompt = `你是一个英语新闻编辑。任务:从以下杂乱输入中提取纯新闻正文。
+
+规则:
+1. 完全去掉标题、日期、作者名、来源网站名、版权声明、广告、导航菜单、图片说明、相关推荐阅读
+2. 只保留新闻主体部分(导语+主体段落)
+3. 确保段落连续完整,不跳段
+4. 长度控制在200-350英文单词
+5. 避开政治敏感/战争暴力内容
+6. 如果内容不适合精读或太短,返回 suitable:false
+
+输入(可能包含网页垃圾):
+标题:${r.title||'无'}
+内容:${raw.slice(0,6000)}
+
+只输出JSON:{suitable:true/false,word_count:数字,topic:中文6字,excerpt:纯正文}`
+
         try{
           const ar = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${apiKey}`},
-            body: JSON.stringify({
+            body:JSON.stringify({
               model:'qwen/qwen3-32b',
               messages:[{role:'user',content:prompt}],
-              temperature:0.2, maxTokens:1200, response_format:{type:'json_object'}
+              temperature:0.2, maxTokens:800, response_format:{type:'json_object'}
             })
           })
           if(!ar.ok) continue
           const ad = await ar.json()
           const text = ad.choices?.[0]?.message?.content
           if(!text) continue
-          const analysis = JSON.parse(text)
+          
+          let analysis
+          try{ analysis = JSON.parse(text) }catch(e){ continue }
+          
           if(!analysis.suitable) continue
           const wc = analysis.word_count || (analysis.excerpt||'').split(/\s+/).length
-          if(wc < 120 || !analysis.excerpt || analysis.excerpt.length < 500) continue
-          bestExcerpt = analysis.excerpt
-          bestInfo = analysis.topic+'·'+analysis.difficulty+'·'+wc+'词'
-          break
+          if(wc >= 100 && analysis.excerpt && analysis.excerpt.length > 400){
+            bestExcerpt = analysis.excerpt
+            break // Found one, stop searching
+          }
         }catch(e){ continue }
       }
       
@@ -580,18 +596,12 @@ Rules:
           setReactValue(ta, bestExcerpt)
           ta.focus()
         } else {
-          // Fallback: use first result raw
-          const raw = (results[0].content || results[0].answer || '').slice(0,3000)
-          if(raw.length > 100){
-            setReactValue(ta, raw)
-            ta.placeholder = '⚠️ 使用原始片段'
-          } else {
-            ta.placeholder = '❌ 未找到合适素材'
-          }
+          setReactValue(ta, '')
+          ta.placeholder = '❌ 未找到合适正文(已尝试'+results.length+'条)'
         }
       }
     }catch(e){
-      if(ta) ta.placeholder = '❌ '+e.message
+      if(ta){ setReactValue(ta,''); ta.placeholder='❌ '+e.message }
     }finally{
       fab.disabled = false; fab.textContent = '🔍 自动找新闻'
     }
@@ -602,164 +612,112 @@ Rules:
 })()
 
 </script>
-
 <script>
-// Full Lesson v3 - shorter prompt, lower maxTokens, better error handling
+// Full Lesson v4 - ultra-simple, will work
 (function(){
   function inject(){
     const ta = document.querySelector('textarea')
-    if(!ta || ta.dataset.v3) return
-    ta.dataset.v3 = '1'
+    if(!ta || ta.dataset.v4) return
+    ta.dataset.v4 = '1'
     
     const wrap = document.createElement('div')
     wrap.style.cssText = 'margin-bottom:8px'
+    const btn = document.createElement('button')
+    btn.id = 'lesson-btn'
+    btn.textContent = '📚 完整教案'
+    btn.style.cssText = 'padding:8px 20px;background:#059669;border:none;border-radius:6px;color:#fff;font-weight:600;cursor:pointer;font-size:13px'
+    btn.disabled = true
     
-    const fullBtn = document.createElement('button')
-    fullBtn.id = 'lesson-btn'
-    fullBtn.textContent = '📚 完整教案'
-    fullBtn.style.cssText = 'padding:8px 20px;background:#059669;border:none;border-radius:6px;color:#fff;font-weight:600;cursor:pointer;font-size:13px'
-    fullBtn.disabled = true
-    
-    fullBtn.onclick = async () => {
-      fullBtn.disabled = true; fullBtn.textContent = '⏳...'
+    btn.onclick = async () => {
+      btn.disabled = true; btn.textContent = '⏳...'
       const ta2 = document.querySelector('textarea')
       const text = ta2 ? ta2.value.trim() : ''
-      if(!text || text.length < 50){ fullBtn.textContent='📚 完整教案'; fullBtn.disabled=false; return }
+      if(text.length < 50){ btn.textContent='📚 完整教案'; btn.disabled=false; return }
       
       const apiKey = localStorage.getItem('groq_api_key')
-      if(!apiKey){ ta2.placeholder='请先配置 Groq API Key'; fullBtn.textContent='📚 完整教案'; fullBtn.disabled=false; return }
-      
-      // Get vocab words from rendered cards
-      const vocabWords = []
-      document.querySelectorAll('strong').forEach(el => {
-        const s = el.getAttribute('style') || ''
-        if(s.includes('18px')){
-          const w = el.textContent.trim()
-          if(w && w.length > 1 && w.length < 20) vocabWords.push(w)
-        }
-      })
-      
-      // Shorter prompt
-      const prompt = `ESL精读教案生成。文本:${text.slice(0,1500)}。词:${vocabWords.slice(0,8).join(',')}。输出JSON:{vocab_enhanced:[{word,ipa,pos,cambridge_def,chinese_def,register,collocations:{correct[],wrong[]},original_sentence,new_sentence,synonyms:{a2,natural,formal},memory}],pronunciation:[{written,natural,rule}],pronunciation_sentence:{original,phonetic,annotations[]},rhythm:[{sentence,mark,natural}],chunks:[{chunk,frequency,variations[],examples[]}],synonym_discrimination:[{group,common_meaning,cards:[{word,register}],substitutable,common_error}],practice:{style_swap:[{informal,formal}],shadowing[],challenges[]}}`
       
       try{
+        // Simple prompt
+        const prompt = `精读教案。文本:${text.slice(0,1200)}。输出JSON:{vocab:[{word,ipa,pos,-cn_def,en_def,synonyms_3级,memory,collocations,example}],pronunciation:[{written,natural,rule}],rhythm:[{sentence,mark}],chunks:[{chunk,freq,examples[]}],practice:{style_swap:[],shadowing:[],challenges:[]}}`
+        
         const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${apiKey}`},
-          body:JSON.stringify({
-            model:'qwen/qwen3-32b',
-            messages:[
-              {role:'system',content:'ESL教案专家。只输出严格JSON'},
-              {role:'user',content:prompt}
-            ],
-            temperature:0.3, maxTokens:2000, response_format:{type:'json_object'}
-          })
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':`Bearer ${apiKey||'dummy'}`},
+          body:JSON.stringify({model:'qwen/qwen3-32b',messages:[{role:'user',content:prompt}],temperature:0.3,maxTokens:1500})
         })
         
         if(!res.ok){
-          const errBody = await res.text().catch(()=>'')
-          throw new Error(`HTTP ${res.status}: ${errBody.slice(0,100)}`)
+          const err = await res.text().catch(()=>'')
+          throw new Error(`API ${res.status} ${err.slice(0,80)}`)
         }
-        
         const data = await res.json()
-        const content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content
-        if(!content) throw new Error('Empty response')
+        const content = data.choices?.[0]?.message?.content || ''
         
-        const lesson = JSON.parse(content)
+        let lesson
+        try{ lesson = JSON.parse(content) }catch(e){ throw new Error('解析失败') }
+        
         renderLesson(lesson)
-        fullBtn.textContent = '✓'
+        btn.textContent = '✓'
       }catch(e){
-        fullBtn.textContent = '❌'
+        btn.textContent = '❌'
         const ta3 = document.querySelector('textarea')
-        if(ta3) ta3.placeholder = '错误:'+e.message
+        if(ta3) ta3.placeholder = e.message.slice(0,50)
       }finally{
-        setTimeout(() => { fullBtn.textContent='📚 完整教案'; fullBtn.disabled=false }, 3000)
+        setTimeout(() => { btn.textContent='📚 完整教案'; btn.disabled=false }, 3000)
       }
     }
     
-    wrap.appendChild(fullBtn)
+    wrap.appendChild(btn)
     ta.parentElement.insertBefore(wrap, ta)
     
     setInterval(() => {
-      const hasVocab = document.querySelector('strong[style*="18px"]')
-      fullBtn.disabled = !hasVocab
+      btn.disabled = !(document.querySelector('strong[style*="18px"]'))
     }, 2000)
   }
   
   function renderLesson(lesson){
     let c = document.getElementById('lesson-container')
-    if(!c){
-      c = document.createElement('div')
-      c.id = 'lesson-container'
-      c.style.cssText = 'margin-top:16px'
-      document.querySelector('#root').appendChild(c)
-    }
+    if(!c){ c = document.createElement('div'); c.id='lesson-container'; c.style.cssText='margin-top:16px'; document.querySelector('#root').appendChild(c) }
     c.innerHTML = ''
     
-    const mk = (title, html) => {
-      const d = document.createElement('div')
-      d.style.cssText = 'margin-bottom:10px'
-      const h = document.createElement('div')
-      h.style.cssText = 'font-size:13px;font-weight:700;color:#fbbf24;padding:6px 0;cursor:pointer;border-bottom:1px solid #334155'
-      h.textContent = '▶ ' + title
-      const b = document.createElement('div')
-      b.innerHTML = html
-      h.onclick = () => { const v = b.style.display !== 'none'; b.style.display = v ? 'none' : 'block'; h.textContent = (v ? '▶ ' : '▼ ') + title }
-      d.appendChild(h); d.appendChild(b)
-      c.appendChild(d)
+    const section = (title, body) => {
+      const d = document.createElement('div'); d.style.cssText='margin-bottom:10px'
+      const h = document.createElement('div'); h.style.cssText='font-size:13px;font-weight:700;color:#fbbf24;padding:6px 0;cursor:pointer;border-bottom:1px solid #334155'; h.textContent='▶ '+title
+      const b = document.createElement('div'); b.innerHTML = body
+      h.onclick = () => { const v=b.style.display!=='none'; b.style.display=v?'none':'block'; h.textContent=(v?'▶':'▼')+title }
+      d.appendChild(h); d.appendChild(b); c.appendChild(d)
     }
     
     // Vocab
-    let v = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px">'
-    ;(lesson.vocab_enhanced||[]).forEach(w => {
+    let v = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:6px">'
+    ;(lesson.vocab||[]).forEach(w => {
       v += `<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:8px;font-size:11px">
-        <div style="font-weight:700;color:#f1f5f9">${w.word||''} <span style="color:#fbbf24">${w.pos||''}</span> <span style="color:#94a3b8">${w.ipa||''}</span></div>
-        <div style="color:#cbd5e1">${w.chinese_def||''}</div>
-        <div style="color:#4ade80">✓ ${((w.collocations||{}).correct||[]).join(', ')||'—'}</div>
-        <div style="color:#f87171">✗ ${((w.collocations||{}).wrong||[]).join(', ')||'—'}</div>
-        <div style="color:#a78bfa">🔄 ${(w.synonyms||{}).a2||''}→${(w.synonyms||{}).natural||''}→${(w.synonyms||{}).formal||''}</div>
-        <div style="color:#94a3b8;margin-top:2px">💡 ${w.memory||''}</div>
-        <div style="color:#cbd5e1;margin-top:3px;font-size:10px">📖 ${(w.original_sentence||'').slice(0,80)}</div>
+        <strong style="color:#f1f5f9">${w.word||''}</strong> <span style="color:#fbbf24">${w.pos||''}</span> <span style="color:#94a3b8">${w.ipa||''}</span>
+        <div style="color:#cbd5e1">${w.cn_def||''}</div>
+        <div style="color:#a78bfa">${Array.isArray(w.synonyms_3级)?w.synonyms_3级.join(' → '):''}</div>
+        <div style="color:#94a3b8;font-size:10px">💡 ${w.memory||''}</div>
+        <div style="color:#cbd5e1;font-size:10px">${(w.example||'').slice(0,60)}</div>
       </div>`
     })
     v += '</div>'
-    mk('📝 增强词汇卡', v)
+    section('📝 词汇增强', v)
     
     // Pronunciation
-    let p = ''
-    ;(lesson.pronunciation||[]).forEach((x,i) => {
-      p += `<div style="background:#1e293b;border-radius:6px;padding:5px;margin-bottom:3px;font-size:11px"><span style="color:#f1f5f9">${i+1}.${x.written||''}</span>→<strong style="color:#4ade80">${x.natural||''}</strong> <span style="color:#94a3b8">${x.rule||''}</span></div>`
-    })
-    if(lesson.pronunciation_sentence){
-      p += `<div style="background:#0f172a;border-radius:6px;padding:8px;margin-top:6px;font-size:11px;color:#cbd5e1">/${(lesson.pronunciation_sentence.phonetic||'').slice(0,150)}/<br><span style="color:#60a5fa">${(lesson.pronunciation_sentence.annotations||[]).join('<br>')}</span></div>`
-    }
-    mk('🔊 语音音变', p)
+    let p = (lesson.pronunciation||[]).map((x,i)=>`<div style="background:#1e293b;border-radius:6px;padding:5px;margin-bottom:3px;font-size:11px">${i+1}. ${x.written||''} → <strong style="color:#4ade80">${x.natural||''}</strong> <span style="color:#94a3b8">${x.rule||''}</span></div>`).join('')
+    section('🔊 语音', p)
     
     // Rhythm
-    let r = ''
-    ;(lesson.rhythm||[]).forEach(x => {
-      r += `<div style="background:#1e293b;border-radius:6px;padding:5px;margin-bottom:3px"><div style="font-family:monospace;color:#fbbf24">${x.mark||''}</div><div style="font-size:11px;color:#cbd5e1">${x.sentence||''}</div></div>`
-    })
-    mk('🎵 句子节奏', r)
+    let r = (lesson.rhythm||[]).map(x=>`<div style="background:#1e293b;border-radius:6px;padding:5px;font-size:11px"><span style="font-family:monospace;color:#fbbf24">${x.mark||''}</span> ${x.sentence||''}</div>`).join('')
+    section('🎵 节奏', r)
     
     // Chunks
-    let ch = ''
-    ;(lesson.chunks||[]).forEach(x => {
-      ch += `<div style="background:#1e293b;border-radius:6px;padding:6px;margin-bottom:3px"><div style="font-weight:600;color:#a78bfa">${x.chunk||''} ${x.frequency||''}</div><div style="font-size:11px;color:#cbd5e1">${(x.examples||[]).join('<br>')}</div></div>`
-    })
-    mk('🧩 语块组', ch)
-    
-    // Synonyms
-    let sy = ''
-    ;(lesson.synonym_discrimination||[]).forEach(g => {
-      sy += `<div style="background:#1e293b;border-radius:6px;padding:6px;margin-bottom:4px"><div style="font-weight:600;color:#a78bfa">${g.group||''}</div><div style="font-size:11px;color:#cbd5e1">${g.common_meaning||''}</div><div style="font-size:11px;color:#f87171">${g.common_error||''}</div></div>`
-    })
-    mk('🔄 同义辨析', sy)
+    let ch = (lesson.chunks||[]).map(x=>`<div style="background:#1e293b;border-radius:6px;padding:6px;font-size:11px"><strong style="color:#a78bfa">${x.chunk||''}</strong> ${x.freq||''}<br>${(x.examples||[]).join('<br>')}</div>`).join('')
+    section('🧩 语块', ch)
     
     // Practice
-    let pr = (lesson.practice||{}).style_swap ? (lesson.practice.style_swap||[]).map(s=>`<div style="background:#1e293b;border-radius:6px;padding:5px;margin-bottom:3px;font-size:11px"><span style="color:#cbd5e1">🗣${s.informal||''}</span><br><span style="color:#93c5fd">📊${s.formal||''}</span></div>`).join('') : ''
-    pr += `<div style="font-size:11px;color:#cbd5e1;margin-top:6px">${((lesson.practice||{}).shadowing||[]).map((s,i)=>`${i+1}.${s}`).join('<br>')}</div>`
-    pr += `<div style="font-size:11px;color:#cbd5e1;margin-top:6px">${((lesson.practice||{}).challenges||[]).join('<br>')}</div>`
-    mk('✍️ 练习', pr)
+    let pr = (lesson.practice||{}).style_swap ? (lesson.practice.style_swap||[]).map(s=>`<div style="font-size:11px"><span style="color:#cbd5e1">🗣${s.informal||s.from||''}</span> → <span style="color:#93c5fd">📊${s.formal||s.to||''}</span></div>`).join('') : ''
+    pr += '<div style="font-size:11px;color:#cbd5e1;margin-top:6px">' + ((lesson.practice||{}).shadowing||[]).map((s,i)=>`${i+1}. ${s}`).join('<br>') + '</div>'
+    section('✍️ 练习', pr)
     
     c.scrollIntoView({behavior:'smooth'})
   }
