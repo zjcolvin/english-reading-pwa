@@ -389,38 +389,39 @@ Rules:
 
 </script>
 
+
+
 <script>
-// Floating Action Button - Clean正文 400-600字
+// Auto news: search → analyze → auto-fill best match
 (function(){
   const TAVILY_KEY = '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'
   
   const fab = document.createElement('div')
   fab.id = 'news-fab'
-  fab.textContent = '🔍 新闻'
+  fab.textContent = '🔍 自动找新闻'
   fab.style.cssText = 'position:fixed;bottom:20px;right:20px;padding:12px 18px;background:#7c3aed;border:none;border-radius:30px;color:#fff;cursor:pointer;font-size:13px;font-weight:700;box-shadow:0 4px 12px rgba(124,58,237,0.4);z-index:9999;user-select:none'
   fab.onmouseenter = () => fab.style.background = '#6d28d9'
   fab.onmouseleave = () => fab.style.background = '#7c3aed'
   fab.onclick = async () => {
-    const tabs = document.querySelectorAll('button')
-    tabs.forEach(t => { if(t.textContent.includes('新建笔记')) t.click() })
+    // Switch to 新建笔记 tab
+    document.querySelectorAll('button').forEach(t => { if(t.textContent.includes('新建笔记')) t.click() })
     
-    let panel = document.getElementById('news-fab-results')
-    if(!panel){
-      panel = document.createElement('div')
-      panel.id = 'news-fab-results'
-      panel.style.cssText = 'position:fixed;bottom:70px;right:20px;width:320px;max-height:60vh;overflow-y:auto;background:#1e293b;border:1px solid #334155;border-radius:12px;padding:12px;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.5)'
-      document.body.appendChild(panel)
-    }
-    panel.innerHTML = '<div style="font-size:12px;color:#94a3b8">搜索分析中...</div>'
+    fab.disabled = true
+    fab.textContent = '⏳ 搜索分析中...'
+    
+    const ta = document.querySelector('textarea')
+    if(ta){ ta.value = '正在搜索并分析英语新闻,请稍候...(约30-60秒)'; ta.focus() }
     
     try{
+      // Step 1: Search
       const res = await fetch('https://api.tavily.com/search', {
         method:'POST',
         headers:{'Content-Type':'application/json','Authorization':`Bearer ${TAVILY_KEY}`},
         body: JSON.stringify({
-          query:'English news simple ESL learners A2 B1',
+          query:'English news article simple ESL A2 B1 learners everyday topics',
           search_depth:'advanced',
           include_answer:'basic',
+          include_raw_content:true,
           max_results:6
         })
       })
@@ -429,82 +430,73 @@ Rules:
       const results = data.results || []
       
       const apiKey = localStorage.getItem('groq_api_key')
-      const items = []
+      let bestExcerpt = ''
+      let bestInfo = ''
       
-      for(const r of results.slice(0,4)){
-        const raw = (r.content || r.answer || '').slice(0,4000)
-        if(raw.length < 100) continue
-        let analysis = { suitable:true, wordCount:300, difficulty:'B1', topic:'综合', excerpt:raw.slice(0,500) }
-        if(apiKey){
-          try{
-            const ar = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-              method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${apiKey}`},
-              body: JSON.stringify({
-                model:'qwen/qwen3-32b',
-                messages:[{role:'user',content:`分析这篇英语文章,选出适合作A2-B1精读的正文段落。
+      for(const r of results.slice(0,5)){
+        const raw = (r.raw_content || r.content || r.answer || '').slice(0,8000)
+        if(raw.length < 300) continue
+        
+        if(!apiKey) continue
+        
+        const prompt = `你是一个英语精读素材编辑。从以下文章中提取最适合A2-B1级别学习者的精读正文段落。
 
-要求:
-1. 只保留正文内容,去掉标题、日期、来源、作者等所有元信息
-2. 截取连续、完整的正文段落
-3. 长度控制在400-600字(英文单词)
+严格规则:
+1. 只保留正文内容!完全去掉标题、日期、作者、来源、网站名、版权声明等所有非正文信息
+2. 截取连续的完整段落(不要跳段、不要拼接不同部分)
+3. 长度必须是200-350个英文单词
 4. 确保段落完整、有意义、可独立阅读
+5. 优先选择有教育意义、日常话题、有完整叙事的内容
 
-只输出JSON:{suitable(true/false),difficulty(A1/A2/B1/B2),topic(中文8字内),excerpt(400-600字的纯正文段落)}
+原文:
+${raw.slice(0,6000)}
 
-标题:${r.title}
-内容:${raw.slice(0,3000)}`}],
-                temperature:0.3, maxTokens:700, response_format:{type:'json_object'}
-              })
+只输出JSON:{word_count:数字(词数),difficulty:A2或B1或B2,topic:中文6字内,excerpt:提取的纯正文段落}` 
+        
+        try{
+          const ar = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${apiKey}`},
+            body: JSON.stringify({
+              model:'qwen/qwen3-32b',
+              messages:[{role:'user',content:prompt}],
+              temperature:0.2, maxTokens:1500, response_format:{type:'json_object'}
             })
-            const ad = await ar.json()
-            analysis = JSON.parse(ad.choices[0].message.content)
-          }catch(e){}
-        }
-        items.push({
-          title: r.title || '',
-          fullContent: raw,
-          suitable: analysis.suitable !== false,
-          difficulty: analysis.difficulty || 'B1',
-          topic: analysis.topic || '综合',
-          excerpt: analysis.excerpt || raw.slice(0,500)
-        })
-      }
-      
-      const suitable = items.filter(i => i.suitable)
-      
-      let html = '<div style="font-size:13px;color:#fbbf24;font-weight:600;margin-bottom:8px">🔍 发现新闻</div>'
-      html += '<button id="close-fab" style="position:absolute;top:8px;right:8px;background:#334155;border:none;border-radius:50%;width:24px;height:24px;color:#fff;cursor:pointer;font-size:12px">✕</button>'
-      
-      if(!suitable.length){
-        html += '<div style="font-size:12px;color:#94a3b8">未找到合适素材</div>'
-      } else {
-        suitable.forEach((item, idx) => {
-          const wordCount = (item.excerpt || '').split(/\s+/).length
-          html += `<div class="fab-item" data-idx="${idx}" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:8px;margin-bottom:6px;cursor:pointer">
-            <div style="font-size:10px;color:#94a3b8;margin-bottom:2px">${item.topic}·${item.difficulty}·~${wordCount}词</div>
-            <div style="font-size:11px;color:#cbd5e1;line-height:1.4">${(item.excerpt||'').slice(0,100)}...</div>
-          </div>`
-        })
-      }
-      
-      panel.innerHTML = html
-      document.getElementById('close-fab').onclick = () => panel.remove()
-      
-      panel.querySelectorAll('.fab-item').forEach(el => {
-        el.onclick = () => {
-          const idx = parseInt(el.dataset.idx)
-          const item = suitable[idx]
-          const ta = document.querySelector('textarea')
-          if(ta){
-            ta.value = item.excerpt
-            ta.focus()
-            panel.remove()
+          })
+          const ad = await ar.json()
+          const analysis = JSON.parse(ad.choices[0].message.content)
+          const wc = analysis.word_count || (analysis.excerpt||'').split(/\s+/).length
+          
+          // Want 200-350 words
+          if(wc >= 150 && wc <= 500 && analysis.excerpt){
+            bestExcerpt = analysis.excerpt
+            bestInfo = `${analysis.topic}·${analysis.difficulty}·${wc}词`
+            break // Found good one, stop
           }
+        }catch(e){ continue }
+      }
+      
+      if(ta){
+        if(bestExcerpt){
+          ta.value = bestExcerpt
+          ta.focus()
+          // Show info briefly
+          const info = document.createElement('div')
+          info.id = 'news-info'
+          info.style.cssText = 'font-size:11px;color:#60a5fa;padding:4px 0'
+          info.textContent = `✓ ${bestInfo}`
+          ta.parentElement.insertBefore(info, ta)
+          setTimeout(() => { const el = document.getElementById('news-info'); if(el) el.remove() }, 5000)
+        } else {
+          ta.value = ''
+          ta.placeholder = '未找到合适素材,请手动粘贴英文原文...'
         }
-      })
+      }
       
     }catch(e){
-      panel.innerHTML = '<div style="font-size:12px;color:#fca5a5">错误: '+e.message+'</div>'
+      if(ta){ ta.value = ''; ta.placeholder = '搜索失败:'+e.message }
+    }finally{
+      fab.disabled = false
+      fab.textContent = '🔍 自动找新闻'
     }
   }
   
