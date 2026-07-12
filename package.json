@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "echo 'Single-file build'",
-    "postbuild": "cp index.html dist/index.html 2>/dev/null || true"
+    "build": "rm -rf dist && mkdir dist && cp index.html dist/index.html && cp -r public/* dist/ 2>/dev/null; cp src/components/*.jsx dist/ 2>/dev/null; echo done"
   }
 }
