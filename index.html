@@ -494,289 +494,7 @@ Rules:
 
 </script>
 
-<script>
-// English Intensive Reading - Full Lesson (4 Phases)
-(function(){
-  // Create "完整教案" button
-  function injectButton(){
-    const ta = document.querySelector('textarea')
-    if(!ta || ta.dataset.fullLesson) return
-    ta.dataset.fullLesson = '1'
-    
-    // Find the analyze button row
-    const analyzeBtn = document.querySelector('button[disabled*="请先配置"]') || 
-                       Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('开始分析'))
-    if(!analyzeBtn) return
-    
-    // Add "完整教案" button next to it
-    const fullBtn = document.createElement('button')
-    fullBtn.id = 'full-lesson-btn'
-    fullBtn.textContent = '📚 完整教案'
-    fullBtn.style.cssText = 'padding:10px 24px;background:#059669;border:none;border-radius:8px;color:#fff;font-weight:600;cursor:pointer;font-size:14px;margin-left:8px'
-    fullBtn.disabled = true
-    fullBtn.title = '先生成基础分析,再用完整教案获取进阶内容'
-    analyzeBtn.parentElement.appendChild(fullBtn)
-    
-    // Enable full lesson button only when analysis exists
-    setInterval(() => {
-      const hasResult = document.querySelector('#root') && document.querySelector('#root').textContent.includes('词汇学习')
-      fullBtn.disabled = !hasResult
-      if(hasResult) fullBtn.title = '点击生成进阶完整教案'
-    }, 2000)
-    
-    fullBtn.onclick = generateFullLesson
-  }
-  
-  async function generateFullLesson(){
-    const fab = document.getElementById('full-lesson-btn')
-    fab.disabled = true; fab.textContent = '⏳ 生成中...(60秒)'
-    
-    // Get analyzed text
-    const ta = document.querySelector('textarea')
-    const text = ta ? ta.value.trim() : ''
-    if(!text){ fab.textContent = '📚 完整教案'; fab.disabled = false; return }
-    
-    const apiKey = localStorage.getItem('groq_api_key')
-    if(!apiKey){ fab.textContent = '📚 完整教案'; fab.disabled = false; return }
-    
-    const prompt = `你是ESL教学专家。基于以下精读文本,生成完整教案(JSON格式,只输出JSON):
 
-文本:
-"""
-${text}
-
-原文中的8个核心词:
-${getVocabWords().join(', ')}
-
-请生成严格结构的JSON:
-{
-  "vocab_enhanced": [
-    {
-      "word": "...", "ipa": "/.../", "pos": "n./v./adj.等",
-      "cambridge_def": "英文释义",
-      "chinese_def": "中文释义",
-      "register": "口语/书面/通用",
-      "collocations": {"correct": ["...", "..."], "wrong": ["..."]},
-      "original_sentence": "原文中的句子",
-      "new_sentence": "另造一个新句子",
-      "synonyms": {"a2": "基础词", "natural": "口语自然版", "formal": "正式书面版"},
-      "memory": "词根/谐音/联想助记",
-      "word_family": "派生词(无则空字符串)",
-      "visual_words": "形近词(无则空字符串)"
-    }
-  ],
-  "pronunciation": [
-    {"written": "...", "natural": "...", "rule": "连读/弱读/浊化规则简述"}
-  ],
-  "pronunciation_sentence": {
-    "original": "原文中一句(20-30词)",
-    "phonetic": "/完整自然音标/",
-    "annotations": ["🔗连读: want to → wanna", "🔉弱读: to → /tə/"]
-  },
-  "rhythm": [
-    {"sentence": "短句", "mark": "●重○弱●重", "natural": "自然读法说明", "错误": "常见中式读法"}
-  ],
-  "chunks": [
-    {"chunk": "approach to", "frequency": "★★★★★", "variations": ["approach to doing", "an approach to"], "examples": ["例句1", "例句2"]}
-  ],
-  "synonym_discrimination": [
-    {
-      "group": "approach / method / way",
-      "common_meaning": "方式,方法",
-      "cards": [
-        {"word": "approach", "register": "通用", "collocation": "approach to", "tone": "中性"}
-      ],
-      "substitutable": "在...语境下可互换",
-      "common_error": "常见错误用法",
-      "exercise": "用三个词分别造句"
-    }
-  ],
-  "practice": {
-    "style_swap": [{"informal": "口语版", "formal": "正式书面版"}],
-    "shadowing": ["第一步:听原文,标出重弱读", "第二步:跟读3遍,模仿节奏", "第三步:朗读并录音对比"],
-    "challenges": ["用今日3个语块造一段60词短文", "用正式语体重写第一段"]
-  }
-}`
-    
-    try{
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${apiKey}`},
-        body:JSON.stringify({
-          model:'qwen/qwen3-32b',
-          messages:[
-            {role:'system',content:'你是ESL精读教学专家。输出严格JSON,不输出markdown。'},
-            {role:'user',content:prompt}
-          ], temperature:0.3, maxTokens:4000, response_format:{type:'json_object'}
-        })
-      })
-      if(!res.ok) throw new Error('LLM '+res.status)
-      const data = await res.json()
-      const content = data.choices[0].message.content
-      const lesson = JSON.parse(content)
-      renderFullLesson(lesson)
-      fab.textContent = '📚 完整教案 ✓'
-    }catch(e){
-      fab.textContent = '❌ ' + e.message.slice(0,30)
-    }finally{
-      setTimeout(() => { fab.textContent = '📚 完整教案'; fab.disabled = false }, 3000)
-    }
-  }
-  
-  function getVocabWords(){
-    const words = []
-    document.querySelectorAll('strong[style*="18px"]').forEach(el => {
-      const w = el.textContent.trim()
-      if(w && w.length > 1) words.push(w)
-    })
-    return words.slice(0, 8)
-  }
-  
-  function renderFullLesson(lesson){
-    let container = document.getElementById('full-lesson-container')
-    if(!container){
-      container = document.createElement('div')
-      container.id = 'full-lesson-container'
-      container.style.cssText = 'margin-top:20px'
-      const root = document.querySelector('#root')
-      if(root) root.appendChild(container)
-    }
-    container.innerHTML = ''
-    
-    // Build sections
-    container.appendChild(section('📝 增强词汇卡', buildVocabEnhanced(lesson.vocab_enhanced)))
-    container.appendChild(section('🔊 语音分析', buildPronunciation(lesson.pronunciation, lesson.pronunciation_sentence)))
-    container.appendChild(section('🎵 句子节奏', buildRhythm(lesson.rhythm)))
-    container.appendChild(section('🧩 语块组', buildChunks(lesson.chunks)))
-    container.appendChild(section('🔄 同义辨析', buildSynonyms(lesson.synonym_discrimination)))
-    container.appendChild(section('✍️ 练习', buildPractice(lesson.practice)))
-    
-    container.scrollIntoView({behavior: 'smooth'})
-  }
-  
-  function section(title, content){
-    const div = document.createElement('div')
-    div.style.cssText = 'margin-bottom:16px'
-    const header = document.createElement('div')
-    header.style.cssText = 'font-size:15px;font-weight:700;color:#fbbf24;padding:8px 0;cursor:pointer;border-bottom:1px solid #334155'
-    header.textContent = '▶ ' + title
-    const body = document.createElement('div')
-    body.style.cssText = 'padding:12px 0'
-    body.appendChild(content)
-    header.onclick = () => {
-      const visible = body.style.display !== 'none'
-      body.style.display = visible ? 'none' : 'block'
-      header.textContent = (visible ? '▶ ' : '▼ ') + title
-    }
-    div.appendChild(header); div.appendChild(body)
-    return div
-  }
-  
-  function buildVocabEnhanced(vocab){
-    const wrap = document.createElement('div')
-    wrap.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px'
-    ;(vocab||[]).forEach(v => {
-      const card = document.createElement('div')
-      card.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:10px;padding:12px'
-      card.innerHTML = `
-        <div style="font-size:16px;font-weight:700;color:#f1f5f9">${v.word || ''} <span style="font-size:12px;color:#fbbf24">${v.pos||''}</span> <span style="font-size:11px;color:#94a3b8">${v.ipa||''}</span></div>
-        <div style="font-size:12px;color:#cbd5e1;margin:4px 0">${v.chinese_def||''}</div>
-        <div style="font-size:11px;color:#60a5fa">📌 ${v.register||''}</div>
-        <div style="font-size:11px;color:#4ade80;margin-top:4">✓ ${(v.collocations||{}).correct||[]).join(', ')}</div>
-        <div style="font-size:11px;color:#f87171">✗ ${((v.collocations||{}).wrong||[]).join(', ')}</div>
-        <div style="font-size:11px;color:#a78bfa;margin-top:4">🔄 ${(v.synonyms||{}).a2||''} → ${(v.synonyms||{}).natural||''} → ${(v.synonyms||{}).formal||''}</div>
-        <div style="font-size:10px;color:#94a3b8;margin-top:4">💡 ${v.memory||''}</div>
-        <div style="font-size:11px;color:#cbd5e1;margin-top:6">📖 ${v.original_sentence||''}</div>
-        <div style="font-size:11px;color:#94a3b8">✏️ ${v.new_sentence||''}</div>
-      `
-      wrap.appendChild(card)
-    })
-    return wrap
-  }
-  
-  function buildPronunciation(list, sentence){
-    const div = document.createElement('div')
-    let html = '<div style="font-size:13px;font-weight:600;color:#fbbf24;margin-bottom:8px">6A 音变规则</div>'
-    ;(list||[]).forEach((p,i) => {
-      html += `<div style="background:#1e293b;border-radius:8px;padding:8px;margin-bottom:6px">
-        <div style="font-size:12px;color:#f1f5f9">${i+1}. ${p.written||''} → <strong style="color:#4ade80">${p.natural||''}</strong></div>
-        <div style="font-size:11px;color:#94a3b8">${p.rule||''}</div>
-      </div>`
-    })
-    if(sentence){
-      html += `<div style="font-size:13px;font-weight:600;color:#fbbf24;margin:12px 0 8px">6B 全句音标</div>`
-      html += `<div style="background:#1e293b;border-radius:8px;padding:12px;font-size:12px;color:#cbd5e1;line-height:1.8">/ ${sentence.phonetic||''} /</div>`
-      html += `<div style="font-size:11px;color:#60a5fa;margin-top:6">${(sentence.annotations||[]).join('<br>')}</div>`
-    }
-    div.innerHTML = html
-    return div
-  }
-  
-  function buildRhythm(list){
-    const div = document.createElement('div')
-    let html = ''
-    ;(list||[]).forEach(r => {
-      html += `<div style="background:#1e293b;border-radius:8px;padding:8px;margin-bottom:6px">
-        <div style="font-family:monospace;font-size:13px;color:#fbbf24">${r.mark||''}</div>
-        <div style="font-size:12px;color:#cbd5e1">${r.sentence||''}</div>
-        <div style="font-size:11px;color:#f87171">✗ ${r.wrong||''}</div>
-        <div style="font-size:11px;color:#4ade80">✓ ${r.natural||''}</div>
-      </div>`
-    })
-    div.innerHTML = html
-    return div
-  }
-  
-  function buildChunks(list){
-    const div = document.createElement('div')
-    let html = ''
-    ;(list||[]).forEach(c => {
-      html += `<div style="background:#1e293b;border-radius:8px;padding:10px;margin-bottom:6px">
-        <div style="font-size:13px;font-weight:600;color:#a78bfa">${c.chunk||''} <span style="font-size:11px;color:#fbbf24">${c.frequency||''}</span></div>
-        <div style="font-size:11px;color:#94a3b8">${(c.variations||[]).join(' / ')}</div>
-        <div style="font-size:11px;color:#cbd5e1;margin-top:4">${(c.examples||[]).map(e=>"• "+e).join('<br>')}</div>
-      </div>`
-    })
-    div.innerHTML = html
-    return div
-  }
-  
-  function buildSynonyms(groups){
-    const div = document.createElement('div')
-    let html = ''
-    ;(groups||[]).forEach(g => {
-      html += `<div style="background:#1e293b;border-radius:8px;padding:10px;margin-bottom:8px">
-        <div style="font-size:13px;font-weight:600;color:#a78bfa">${g.group||''}</div>
-        <div style="font-size:12px;color:#cbd5e1;margin:4px 0">共同含义: ${g.common_meaning||''}</div>
-        <div style="font-size:11px;color:#94a3b8">${(g.cards||[]).map(c=>`• <strong>${c.word}</strong>(${c.register}) - ${c.collocation}`).join('<br>')}</div>
-        <div style="font-size:11px;color:#60a5fa;margin-top:4">💡 ${g.substitutable||''}</div>
-        <div style="font-size:11px;color:#f87171">⚠️ ${g.common_error||''}</div>
-        <div style="font-size:11px;color:#4ade80;margin-top:4">✍️ ${g.exercise||''}</div>`
-    })
-    div.innerHTML = html
-    return div
-  }
-  
-  function buildPractice(p){
-    const div = document.createElement('div')
-    let html = '<div style="font-size:13px;font-weight:600;color:#34d399;margin-bottom:6px">语体转换</div>'
-    ;((p||{}).style_swap||[]).forEach(s => {
-      html += `<div style="background:#1e293b;border-radius:8px;padding:8px;margin-bottom:6px;font-size:12px">
-        <div style="color:#cbd5e1">🗣 ${s.informal||''}</div>
-        <div style="color:#93c5fd">📊 ${s.formal||''}</div>
-      </div>`
-    })
-    html += '<div style="font-size:13px;font-weight:600;color:#34d399;margin:12px 0 6px">跟读三步法</div>'
-    html += `<div style="background:#1e293b;border-radius:8px;padding:10px;font-size:12px;color:#cbd5e1">${((p||{}).shadowing||[]).map((s,i)=>`${i+1}. ${s}`).join('<br>')}</div>`
-    html += '<div style="font-size:13px;font-weight:600;color:#34d399;margin:12px 0 6px">造句挑战</div>'
-    html += `<div style="background:#1e293b;border-radius:8px;padding:10px;font-size:12px;color:#cbd5e1">${((p||{}).challenges||[]).map(c=>"✍️ "+c).join('<br>')}</div>`
-    div.innerHTML = html
-    return div
-  }
-  
-  setInterval(injectButton, 1500)
-})()
-
-</script>
 <script>
 // Auto news v4 - simplified, robust
 (function(){
@@ -881,6 +599,180 @@ ${getVocabWords().join(', ')}
   
   if(document.readyState === 'loading'){ document.addEventListener('DOMContentLoaded', ()=>document.body.appendChild(fab)) }
   else { document.body.appendChild(fab) }
+})()
+
+</script>
+<script>
+// English Intensive Reading - Full Lesson v2
+(function(){
+  function inject(){
+    const ta = document.querySelector('textarea')
+    if(!ta || ta.dataset.v2lesson) return
+    ta.dataset.v2lesson = '1'
+    
+    // Create button ABOVE textarea
+    const wrap = document.createElement('div')
+    wrap.id = 'lesson-btn-wrap'
+    wrap.style.cssText = 'display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap'
+    
+    const fullBtn = document.createElement('button')
+    fullBtn.id = 'full-lesson-btn'
+    fullBtn.textContent = '📚 完整教案'
+    fullBtn.style.cssText = 'padding:8px 20px;background:#059669;border:none;border-radius:6px;color:#fff;font-weight:600;cursor:pointer;font-size:13px'
+    fullBtn.disabled = true
+    fullBtn.title = '先生成基础分析后,点这里生成进阶完整教案'
+    
+    fullBtn.onclick = async () => {
+      fullBtn.disabled = true; fullBtn.textContent = '⏳ 生成中...'
+      
+      const text = ta.value.trim()
+      if(!text || text.length < 50){ fullBtn.textContent='📚 完整教案'; fullBtn.disabled=false; return }
+      
+      const apiKey = localStorage.getItem('groq_api_key')
+      if(!apiKey){ ta.placeholder='请先配置 Groq API Key'; fullBtn.textContent='📚 完整教案'; fullBtn.disabled=false; return }
+      
+      // Gather vocab words from page
+      const vocabWords = []
+      document.querySelectorAll('strong').forEach(el => {
+        const s = el.getAttribute('style') || ''
+        if(s.includes('18px')){
+          const w = el.textContent.trim()
+          if(w && w.length > 1 && w.length < 20) vocabWords.push(w)
+        }
+      })
+      
+      const prompt = `你是ESL精读教学专家。基于以下文本生成完整教案(只输出JSON):
+
+文本:${text.slice(0,2000)}
+
+核心词:${vocabWords.slice(0,8).join(', ')}
+
+输出JSON:{
+  "vocab_enhanced":[{"word":"","ipa":"","pos":"n.","cambridge_def":"","chinese_def":"","register":"通用","collocations":{"correct":[],"wrong":[]},"original_sentence":"","new_sentence":"","synonyms":{"a2":"","natural":"","formal":""},"memory":"","word_family":"","visual_words":""}],
+  "pronunciation":[{"written":"","natural":"","rule":""}],
+  "pronunciation_sentence":{"original":"","phonetic":"","annotations":[]},
+  "rhythm":[{"sentence":"","mark":"●○●","natural":"","wrong":""}],
+  "chunks":[{"chunk":"","frequency":"★★★","variations":[],"examples":[]}],
+  "synonym_discrimination":[{"group":"","common_meaning":"","cards":[{"word":"","register":"","collocation":""}],"substitutable":"","common_error":"","exercise":""}],  "practice":{"style_swap":[{"informal":"","formal":""}],"shadowing":[],"challenges":[]}
+}`
+      
+      try{
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${apiKey}`},
+          body:JSON.stringify({model:'qwen/qwen3-32b',messages:[{role:'system',content:'ESL教学专家,只输出严格JSON'},{role:'user',content:prompt}],temperature:0.3,maxTokens:4000,response_format:{type:'json_object'}})
+        })
+        if(!res.ok) throw new Error('LLM '+res.status)
+        const data = await res.json()
+        const lesson = JSON.parse(data.choices[0].message.content)
+        renderLesson(lesson)
+        fullBtn.textContent = '📚 完整教案 ✓'
+      }catch(e){
+        fullBtn.textContent = '❌ '+e.message.slice(0,20)
+      }finally{
+        setTimeout(() => { fullBtn.textContent='📚 完整教案'; fullBtn.disabled=false }, 3000)
+      }
+    }
+    
+    wrap.appendChild(fullBtn)
+    ta.parentElement.insertBefore(wrap, ta)
+    
+    // Enable when analysis result visible
+    setInterval(() => {
+      const hasVocab = document.querySelector('strong[style*="18px"]')
+      fullBtn.disabled = !hasVocab
+    }, 2000)
+  }
+  
+  function renderLesson(lesson){
+    let c = document.getElementById('lesson-container')
+    if(!c){
+      c = document.createElement('div')
+      c.id = 'lesson-container'
+      c.style.cssText = 'margin-top:16px'
+      document.querySelector('#root').appendChild(c)
+    }
+    c.innerHTML = ''
+    
+    const mkSection = (title, html) => {
+      const div = document.createElement('div')
+      div.style.cssText = 'margin-bottom:12px'
+      const hdr = document.createElement('div')
+      hdr.style.cssText = 'font-size:14px;font-weight:700;color:#fbbf24;padding:6px 0;cursor:pointer;border-bottom:1px solid #334155'
+      hdr.textContent = '▶ ' + title
+      const body = document.createElement('div')
+      body.innerHTML = html
+      hdr.onclick = () => {
+        const v = body.style.display !== 'none'
+        body.style.display = v ? 'none' : 'block'
+        hdr.textContent = (v ? '▶ ' : '▼ ') + title
+      }
+      div.appendChild(hdr); div.appendChild(body)
+      c.appendChild(div)
+    }
+    
+    // Vocab enhanced
+    let vocabHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px">'
+    ;(lesson.vocab_enhanced||[]).forEach(v => {
+      vocabHTML += `<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px">
+        <div style="font-size:15px;font-weight:700;color:#f1f5f9">${v.word||''} <span style="font-size:11px;color:#fbbf24">${v.pos||''}</span> <span style="font-size:11px;color:#94a3b8">${v.ipa||''}</span></div>
+        <div style="font-size:12px;color:#cbd5e1">${v.chinese_def||''}</div>
+        <div style="font-size:10px;color:#60a5fa;margin-top:2px">📌 ${v.register||''}</div>
+        <div style="font-size:10px;color:#4ade80">✓ ${((v.collocations||{}).correct||[]).join(', ')}</div>
+        <div style="font-size:10px;color:#f87171">✗ ${((v.collocations||{}).wrong||[]).join(', ')}</div>
+        <div style="font-size:10px;color:#a78bfa">🔄 ${(v.synonyms||{}).a2||''} → ${(v.synonyms||{}).natural||''} → ${(v.synonyms||{}).formal||''}</div>
+        <div style="font-size:10px;color:#94a3b8;margin-top:2px">💡 ${v.memory||''}</div>
+        <div style="font-size:11px;color:#cbd5e1;margin-top:4px">📖 ${v.original_sentence||''}</div>
+      </div>`
+    })
+    vocabHTML += '</div>'
+    mkSection('📝 增强词汇卡(IPA+搭配+同义三阶)', vocabHTML)
+    
+    // Pronunciation
+    let pronHTML = ''
+    ;(lesson.pronunciation||[]).forEach((p,i) => {
+      pronHTML += `<div style="background:#1e293b;border-radius:6px;padding:6px;margin-bottom:4px;font-size:12px"><span style="color:#f1f5f9">${i+1}. ${p.written||''}</span> → <strong style="color:#4ade80">${p.natural||''}</strong> <span style="color:#94a3b8">- ${p.rule||''}</span></div>`
+    })
+    if(lesson.pronunciation_sentence){
+      pronHTML += `<div style="background:#0f172a;border-radius:6px;padding:10px;margin-top:8px;font-size:12px;color:#cbd5e1"><strong>全句音标:</strong> /${(lesson.pronunciation_sentence.phonetic||'').slice(0,200)}/<br><span style="color:#60a5fa">${(lesson.pronunciation_sentence.annotations||[]).join('<br>')}</span></div>`
+    }
+    mkSection('🔊 语音音变(8条+全句音标)', pronHTML)
+    
+    // Rhythm
+    let rhHTML = ''
+    ;(lesson.rhythm||[]).forEach(r => {
+      rhHTML += `<div style="background:#1e293b;border-radius:6px;padding:6px;margin-bottom:4px"><div style="font-family:monospace;color:#fbbf24">${r.mark||''}</div><div style="font-size:12px;color:#cbd5e1">${r.sentence||''}</div><div style="font-size:10px;color:#4ade80">✓ ${r.natural||''}</div></div>`
+    })
+    mkSection('🎵 句子节奏', rhHTML)
+    
+    // Chunks
+    let chHTML = ''
+    ;(lesson.chunks||[]).forEach(c => {
+      chHTML += `<div style="background:#1e293b;border-radius:6px;padding:8px;margin-bottom:4px"><div style="font-size:12px;font-weight:600;color:#a78bfa">${c.chunk||''} <span style="color:#fbbf24">${c.frequency||''}</span></div><div style="font-size:11px;color:#94a3b8">${(c.variations||[]).join(' / ')}</div><div style="font-size:11px;color:#cbd5e1">${(c.examples||[]).map(e=>"• "+e).join('<br>')}</div></div>`
+    })
+    mkSection('🧩 语块组(6个)', chHTML)
+    
+    // Synonyms
+    let synHTML = ''
+    ;(lesson.synonym_discrimination||[]).forEach(g => {
+      synHTML += `<div style="background:#1e293b;border-radius:6px;padding:8px;margin-bottom:6px"><div style="font-size:12px;font-weight:600;color:#a78bfa">${g.group||''}</div><div style="font-size:11px;color:#cbd5e1">共同: ${g.common_meaning||''}</div><div style="font-size:11px;color:#94a3b8">${(g.cards||[]).map(c=>"• "+c.word+"("+c.register+")").join('<br>')}</div><div style="font-size:10px;color:#f87171">⚠️ ${g.common_error||''}</div></div>`
+    })
+    mkSection('🔄 同义辨析(2-3组)', synHTML)
+    
+    // Practice
+    let pracHTML = '<strong style="color:#34d399">语体转换:</strong><br>'
+    ;((lesson.practice||{}).style_swap||[]).forEach(s => {
+      pracHTML += `<div style="background:#1e293b;border-radius:6px;padding:6px;margin:4px 0;font-size:12px"><span style="color:#cbd5e1">🗣 ${s.informal||''}</span><br><span style="color:#93c5fd">📊 ${s.formal||''}</span></div>`
+    })
+    pracHTML += '<br><strong style="color:#34d399">跟读法:</strong><br>'
+    pracHTML += `${((lesson.practice||{}).shadowing||[]).map((s,i)=>`${i+1}. ${s}`).join('<br>')}`
+    pracHTML += '<br><br><strong style="color:#34d399">造句挑战:</strong><br>'
+    pracHTML += `${((lesson.practice||{}).challenges||[]).map(c=>"✍️ "+c).join('<br>')}`
+    mkSection('✍️ 练习', pracHTML)
+    
+    c.scrollIntoView({behavior:'smooth'})
+  }
+  
+  setInterval(inject, 1000)
 })()
 
 </script>
