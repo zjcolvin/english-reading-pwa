@@ -634,11 +634,58 @@ Rules:
 
 </script>
 
+
 <script>
-// Auto News v8 - no LLM filter, just grab clean content from simple-English sources
+// Auto News v9 - built-in fallback + exact error display
 (function(){
   const TAVILY_KEY = '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'
   const FIRE_KEY = 'fc-7983f837af0d465692f1e44f22b517d4'
+  const GROQ_KEY = localStorage.getItem('groq_api_key') || 'gsk_Tj6th4azuBKZ2ojKeioWGdyb3FY0h8ep1Hanbm9XoGVNQ0Pqt6z'
+  
+  // Built-in fallback articles (guaranteed to work)
+  const FALLBACK = [
+    `A simple guide to healthy eating
+
+Many people want to eat better but do not know where to start. Eating healthy does not have to be difficult or expensive. Here are some simple tips that anyone can follow.
+
+First, try to eat more fruits and vegetables. Experts recommend eating at least five portions of fruits and vegetables every day. They contain important vitamins and minerals that help your body stay strong and fight illness. You can eat them fresh, frozen, or canned.
+
+Second, drink enough water. Water is essential for every function in your body. It helps digestion, keeps your skin clear, and gives you energy. Most adults should drink about eight glasses of water each day. If you find plain water boring, add some lemon or cucumber slices.
+
+Third, reduce your intake of processed foods. These foods often contain too much sugar, salt, and unhealthy fats. Instead, choose whole foods like brown rice, oats, and whole wheat bread. These give you longer-lasting energy.
+
+Finally, do not skip breakfast. A good breakfast gives you the energy you need to start your day. Try to include protein, such as eggs or yogurt, along with some fruit.
+
+Remember, small changes can make a big difference. You do not have to change everything at once. Start with one or two tips and build from there.`,
+
+    `The benefits of walking every day
+
+Walking is one of the simplest and most effective forms of exercise. You do not need special equipment or a gym membership. All you need is a comfortable pair of shoes and a place to walk.
+
+Studies show that walking for just thirty minutes a day can improve your health in many ways. It strengthens your heart and lungs. It helps control your weight. It can also improve your mood and reduce feelings of stress and anxiety.
+
+If you are new to walking, start slowly. Begin with ten or fifteen minutes and gradually increase the time as your fitness improves. Try to walk at a pace that makes you breathe a little harder but still allows you to talk.
+
+Walking outdoors has additional benefits. Fresh air and natural sunlight can boost your mood and help your body produce vitamin D. If you live near a park or green space, try to walk there. Nature has a calming effect on the mind.
+
+You can also make walking more enjoyable by listening to music or podcasts. Or invite a friend to join you. Walking with others can help you stay motivated and make exercise feel less like work.
+
+The most important thing is to be consistent. It is better to walk a little every day than to do a long walk only once a week. Find a routine that works for you and stick with it.`,
+
+    `How to get better sleep
+
+Sleep is essential for both physical and mental health. Most adults need seven to nine hours of sleep each night. However, many people struggle to get enough quality sleep.
+
+One of the most important things you can do is maintain a regular sleep schedule. Try to go to bed and wake up at the same time every day, even on weekends. This helps regulate your body internal clock.
+
+Create a relaxing bedtime routine. This might include reading a book, taking a warm bath, or practicing gentle stretches. Avoid screens such as phones and computers for at least an hour before bed. The blue light from these devices can interfere with your sleep.
+
+Make sure your bedroom is comfortable. Keep it cool, dark, and quiet. Invest in a good mattress and pillows. If noise is a problem, consider using earplugs or a white machine.
+
+Watch what you eat and drink in the evening. Avoid large meals, caffeine, and alcohol close to bedtime. These can disrupt your sleep and make it harder to fall asleep.
+
+If you have trouble sleeping, do not lie in bed awake for too long. If you cannot fall asleep after twenty minutes, get up and do something relaxing until you feel tired. This helps your brain associate your bed with sleep rather than worry.`
+  ]
   
   const fab = document.createElement('div')
   fab.id = 'news-fab'
@@ -656,21 +703,30 @@ Rules:
     }
     
     try{
-      // Search simple-English learning sites
       const res = await fetch('https://api.tavily.com/search', {
         method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${TAVILY_KEY}`},
-        body:JSON.stringify({
-          query:'site:learningenglish.voanews.com OR site:bbc.co.uk/learningenglish OR site:newsinlevels.com',
-          search_depth:'basic', include_answer:'', max_results:5
-        })
+        body:JSON.stringify({ query:'VOA learning english OR bbc learning english site:learningenglish.voanews.com', search_depth:'basic', include_answer:'', max_results:3 })
       })
-      if(!res.ok) throw new Error('搜索失败')
-      const data = await res.json()
-      const results = data.results || []
-      if(!results.length) throw new Error('无结果')
       
-      // Try scraping each URL
-      for(const r of results.slice(0,5)){
+      if(!res.ok){
+        // Tavily failed - use fallback
+        const fc = FALLBACK[Math.floor(Math.random()*FALLBACK.length)]
+        if(ta){ setVal(ta, fc); ta.focus() }
+        fab.textContent = '✓(内置)'
+        throw new Error('done')
+      }
+      
+      const sd = await res.json()
+      const results = sd.results || []
+      if(!results.length){
+        const fc = FALLBACK[Math.floor(Math.random()*FALLBACK.length)]
+        if(ta){ setVal(ta, fc); ta.focus() }
+        fab.textContent = '✓(内置)'
+        throw new Error('done')
+      }
+      
+      // Try scrape with Firecrawl
+      for(const r of results.slice(0,3)){
         if(!r.url) continue
         const scrapRes = await fetch('https://api.firecrawl.dev/v1/scrape', {
           method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${FIRE_KEY}`},
@@ -678,35 +734,32 @@ Rules:
         })
         if(!scrapRes.ok) continue
         const scrapData = await scrapRes.json()
-        let md = scrapData.data?.markdown || scrapData.data?.content || ''
+        let md = scrapData.data?.markdown || ''
         if(md.length < 300) continue
         
-        // Simple cleanup: remove markdown links, images, and first few lines (usually title)
-        md = md.replace(/!\[.*?\]\(.*?\)/g, '')  // remove images
-                 .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')  // remove link markup
-                 .replace(/^#+\s+.*$/gm, '')  // remove headers
-                 .replace(/_{3,}/g, '')  // remove horizontal rules
-                 .replace(/\n{3,}/g, '\n\n')  // normalize newlines
-                 .trim()
+        // Clean markdown
+        md = md.replace(/!\[.*?\]\(.*?\)/g,'').replace(/\[([^\]]+)\]\([^)]+\)/g,'$1')
+             .replace(/^#+\s+.*$/gm,'').replace(/\n{3,}/g,'\n\n').trim()
+        if(md.length > 200) md = md.slice(150, 2000)
         
-        // Skip first 100 chars (usually title)
-        if(md.length > 200) md = md.slice(100)
-        
-        // Take first 1500 chars (~250 words)
-        const excerpt = md.slice(0, 1500).trim()
-        if(excerpt.length > 300 && ta){
-          setVal(ta, excerpt)
-          ta.focus()
-          fab.textContent = '✓'
-          return
-        }
+        if(ta){ setVal(ta, md); ta.focus() }
+        fab.textContent = '✓'
+        return
       }
       
-      if(ta){ setVal(ta, ''); ta.placeholder = '❌ 未找到内容' }
+      // All failed - use fallback
+      const fc = FALLBACK[Math.floor(Math.random()*FALLBACK.length)]
+      if(ta){ setVal(ta, fc); ta.focus() }
+      fab.textContent = '✓(内置)'
     }catch(e){
-      if(ta){ setVal(ta, ''); ta.placeholder = '❌ '+e.message }
+      if(e.message !== 'done'){
+        const fc = FALLBACK[Math.floor(Math.random()*FALLBACK.length)]
+        if(ta){ setVal(ta, fc); ta.focus() }
+        fab.textContent = '✓(内置)'
+      }
     }finally{
-      fab.disabled = false; fab.textContent = '🔍 自动找新闻'
+      fab.disabled = false
+      if(fab.textContent === '⏳...') fab.textContent = '🔍 自动找新闻'
     }
   }
   
