@@ -388,5 +388,129 @@ Rules:
 })()
 
 </script>
+<script>
+// Floating Action Button - always visible
+(function(){
+  const TAVILY_KEY = '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'
+  
+  // Create floating button
+  const fab = document.createElement('div')
+  fab.id = 'news-fab'
+  fab.textContent = '🔍 新闻'
+  fab.style.cssText = 'position:fixed;bottom:20px;right:20px;padding:12px 18px;background:#7c3aed;border:none;border-radius:30px;color:#fff;cursor:pointer;font-size:13px;font-weight:700;box-shadow:0 4px 12px rgba(124,58,237,0.4);z-index:9999;user-select:none'
+  fab.onmouseenter = () => fab.style.background = '#6d28d9'
+  fab.onmouseleave = () => fab.style.background = '#7c3aed'
+  fab.onclick = async () => {
+    // Switch to first tab (新建笔记)
+    const tabs = document.querySelectorAll('button')
+    tabs.forEach(t => { if(t.textContent.includes('新建笔记')) t.click() })
+    
+    // Show results panel above textarea
+    let panel = document.getElementById('news-fab-results')
+    if(!panel){
+      panel = document.createElement('div')
+      panel.id = 'news-fab-results'
+      panel.style.cssText = 'position:fixed;bottom:70px;right:20px;width:320px;max-height:60vh;overflow-y:auto;background:#1e293b;border:1px solid #334155;border-radius:12px;padding:12px;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.5)'
+      document.body.appendChild(panel)
+    }
+    
+    panel.innerHTML = '<div style="font-size:13px;color:#fbbf24;font-weight:600;margin-bottom:8px">🔍 发现新闻素材</div><div style="font-size:12px;color:#94a3b8">搜索中...</div>'
+    
+    try{
+      const res = await fetch('https://api.tavily.com/search', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':`Bearer ${TAVILY_KEY}`},
+        body: JSON.stringify({
+          query:'English news simple ESL learners A2 B1',
+          search_depth:'advanced',
+          include_answer:'basic',
+          max_results:5
+        })
+      })
+      if(!res.ok) throw new Error('Tavily '+res.status)
+      const data = await res.json()
+      const results = data.results || []
+      
+      const apiKey = localStorage.getItem('groq_api_key')
+      const items = []
+      
+      for(const r of results.slice(0,4)){
+        const raw = (r.content || r.answer || '').slice(0,3000)
+        if(raw.length < 80) continue
+        let analysis = { suitable:true, wordCount:raw.split(/\s+/).length, difficulty:'B1', topic:'综合', excerpt:raw.slice(0,500) }
+        if(apiKey){
+          try{
+            const ar = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+              method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${apiKey}`},
+              body: JSON.stringify({
+                model:'qwen/qwen3-32b',
+                messages:[{role:'user',content:`分析这篇英语文章是否适合作A2-B1精读。只输出JSON:{suitable(true/false),wordCount,difficulty(A1/A2/B1/B2),topic(中文8字),excerpt(原文截取最佳200-400字)}\n标题:${r.title}\n内容:${raw.slice(0,2500)}`}],
+                temperature:0.3, maxTokens:512, response_format:{type:'json_object'}
+              })
+            })
+            const ad = await ar.json()
+            analysis = JSON.parse(ad.choices[0].message.content)
+          }catch(e){}
+        }
+        items.push({
+          title: r.title || 'Untitled', fullContent: raw,
+          suitable: analysis.suitable !== false,
+          wordCount: analysis.wordCount || raw.split(/\s+/).length,
+          difficulty: analysis.difficulty || 'B1',
+          topic: analysis.topic || '综合',
+          excerpt: analysis.excerpt || raw.slice(0,500)
+        })
+      }
+      
+      const suitable = items.filter(i => i.suitable)
+      
+      let html = '<div style="font-size:13px;color:#fbbf24;font-weight:600;margin-bottom:8px">🔍 发现新闻素材</div>'
+      html += '<button id="close-fab-panel" style="position:absolute;top:8px;right:8px;background:#334155;border:none;border-radius:50%;width:24px;height:24px;color:#fff;cursor:pointer;font-size:12px">✕</button>'
+      
+      if(!suitable.length){
+        html += '<div style="font-size:12px;color:#94a3b8">未找到合适素材,试试手动粘贴</div>'
+      } else {
+        suitable.forEach((item, idx) => {
+          html += `<div class="fab-item" data-idx="${idx}" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:8px;margin-bottom:6px;cursor:pointer">
+            <div style="font-size:12px;font-weight:600;color:#f1f5f9">${item.title.slice(0,40)}</div>
+            <div style="font-size:10px;color:#94a3b8">${item.topic}·${item.difficulty}·~${item.wordCount}词</div>
+            <div style="font-size:11px;color:#cbd5e1;margin-top:2px">${(item.excerpt||item.fullContent).slice(0,80)}...</div>
+          </div>`
+        })
+      }
+      
+      panel.innerHTML = html
+      
+      // Close handler
+      document.getElementById('close-fab-panel').onclick = () => panel.remove()
+      
+      // Click handlers
+      panel.querySelectorAll('.fab-item').forEach(el => {
+        el.onclick = () => {
+          const idx = parseInt(el.dataset.idx)
+          const item = suitable[idx]
+          const ta = document.querySelector('textarea')
+          if(ta){
+            ta.value = item.excerpt || item.fullContent.slice(0,2000)
+            ta.focus()
+            panel.remove()
+          }
+        }
+      })
+      
+    }catch(e){
+      panel.innerHTML = '<div style="font-size:12px;color:#fca5a5">错误: '+e.message+'</div>'
+    }
+  }
+  
+  // Add after page load
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', () => document.body.appendChild(fab))
+  } else {
+    document.body.appendChild(fab)
+  }
+})()
+
+</script>
 </body>
 </html>
