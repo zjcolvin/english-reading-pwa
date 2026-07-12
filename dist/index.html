@@ -130,5 +130,196 @@ Rules:
   setInterval(inject,800);
 })();
 </script>
+<script>
+// News Discovery Feature - Tavily Search + LLM Analysis
+(function(){
+  const TAVILY_KEY = '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'
+  const TAVILY_URL = 'https://api.tavily.com/search'
+  
+  // Inject News Discovery Button
+  function injectNewsButton(){
+    const textarea = document.querySelector('textarea')
+    if(!textarea || textarea.dataset.newsInjected) return
+    textarea.dataset.newsInjected = '1'
+    
+    // Create button container
+    const container = textarea.parentElement
+    
+    const btnRow = document.createElement('div')
+    btnRow.style.cssText = 'display:flex;gap:8px;margin-top:8px;flex-wrap:wrap'
+    
+    const discoverBtn = document.createElement('button')
+    discoverBtn.id = 'news-discover-btn'
+    discoverBtn.textContent = '🔍 发现新闻素材'
+    discoverBtn.style.cssText = 'padding:8px 16px;background:#7c3aed;border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:13px;font-weight:600'
+    discoverBtn.onclick = startDiscovery
+    
+    const statusDiv = document.createElement('div')
+    statusDiv.id = 'news-status'
+    statusDiv.style.cssText = 'font-size:12px;color:#94a3b8;padding:4px 0'
+    
+    btnRow.appendChild(discoverBtn)
+    btnRow.appendChild(statusDiv)
+    container.appendChild(btnRow)
+    
+    // Results panel
+    const resultsPanel = document.createElement('div')
+    resultsPanel.id = 'news-results'
+    resultsPanel.style.cssText = 'margin-top:12px;display:flex;flex-direction:column;gap:8px'
+    container.appendChild(resultsPanel)
+  }
+  
+  async function startDiscovery(){
+    const btn = document.getElementById('news-discover-btn')
+    const status = document.getElementById('news-status')
+    const panel = document.getElementById('news-results')
+    
+    btn.disabled = true
+    btn.textContent = '⏳ 搜索中...'
+    status.textContent = '正在搜索英语新闻素材...'
+    panel.innerHTML = ''
+    
+    try{
+      // Step 1: Search Tavily
+      const searchRes = await fetch(TAVILY_URL, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          api_key: TAVILY_KEY,
+          query: 'simple English news article recent 2024 2025 for ESL learners A2 B1 level everyday topics',
+          search_depth: 'advanced',
+          include_answer: 'full',
+          max_results: 5,
+          include_raw_content: true
+        })
+      })
+      
+      if(!searchRes.ok) throw new Error('Tavily search failed: ' + searchRes.status)
+      const data = await searchRes.json()
+      const results = data.results || []
+      
+      if(results.length === 0){
+        status.textContent = '未找到合适的新闻,请稍后再试'
+        btn.disabled = false
+        btn.textContent = '🔍 发现新闻素材'
+        return
+      }
+      
+      status.textContent = `找到 ${results.length }条新闻,正在用 LLM 分析适合度...`
+      
+      // Step 2: LLM analyze each
+      const apiKey = localStorage.getItem('groq_api_key')
+      const analyses = []
+      
+      for(let i = 0; i < Math.min(results.length, 3); i++){
+        const r = results[i]
+        const content = (r.content || r.raw_content || '').slice(0, 3000)
+        if(content.length < 100) continue
+        
+        const analysis = await analyzeWithLLM(apiKey, r.title, content)
+        analyses.push({
+          title: r.title,
+          url: r.url,
+          content: content,
+          ...analysis
+        })
+      }
+      
+      // Step 3: Show suitable ones
+      const suitable = analyses.filter(a => a.suitable)
+      if(suitable.length === 0){
+        status.textContent = '未找到完全匹配的 A2-B1 难度素材,请稍后再试'
+      } else {
+        status.textContent = `✓ 找到 ${suitable.length}条合适素材,点击选择:`
+        suitable.forEach((item, i) => {
+          const card = createNewsCard(item, i)
+          panel.appendChild(card)
+        })
+      }
+      
+    }catch(e){
+      status.textContent = '❌ 错误: ' + e.message
+    }finally{
+      btn.disabled = false
+      btn.textContent = '🔍 发现新闻素材'
+    }
+  }
+  
+  async function analyzeWithLLM(apiKey, title, content){
+    if(!apiKey){
+      return { suitable: true, wordCount: content.split(/\s+/).length, difficulty: 'unknown', topic: title.slice(0,30) }
+    }
+    
+    const prompt = `分析以下英语文章是否适合作为 A2-B1 级别(初中级)英语学习者的精读素材。
+
+标题: ${title}
+文章内容(前3000字符):
+${content.slice(0, 3000)}
+
+请用 JSON 格式回答:
+{
+  "suitable": true/false,
+  "wordCount": 估算全文词数,
+  "difficulty": "A1/A2/B1/B2/C1",
+  "topic": "主题(中文,10字内)",
+  "reason": "适合/不适合的原因(20字内)",
+  "excerpt": "最适合精读的连续段落(200-400字,从原文中截取)"
+}
+
+只输出 JSON。`
+    
+    try{
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','Authorization':`Bearer ${apiKey}`},
+        body: JSON.stringify({
+          model: 'qwen/qwen3-32b',
+          messages: [{role:'user',content:prompt}],
+          temperature: 0.3,
+          max_tokens: 1024,
+          response_format:{type:'json_object'}
+        })
+      })
+      const d = await res.json()
+      const text = d.choices?.[0]?.message?.content || '{}'
+      return JSON.parse(text)
+    }catch{
+      return { suitable: true, wordCount: 300, difficulty: 'B1', topic: title.slice(0,20) }
+    }
+  }
+  
+  function createNewsCard(item, index){
+    const card = document.createElement('div')
+    card.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:10px;padding:12px 14px;cursor:pointer;transition:border .15s'
+    card.onmouseenter = () => card.style.borderColor = '#7c3aed'
+    card.onmouseleave = () => card.style.borderColor = '#334155'
+    
+    card.innerHTML = `
+      <div style="font-size:13px;font-weight:600;color:#f1f5f9;margin-bottom:4">${item.title}</div>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:6">${item.topic || ''} · ${item.difficulty || ''} · ~${item.wordCount || '?'}词 · <span style="color:#4ade80">${item.reason || '✓ 适合'}</span></div>
+      <div style="font-size:12px;color:#cbd5e1;line-height:1.5">${(item.excerpt || item.content || '').slice(0,200)}...</div>
+    `
+    
+    card.onclick = () => {
+      const textarea = document.querySelector('textarea')
+      textarea.value = item.excerpt || item.content
+      textarea.focus()
+      // Visual feedback
+      card.style.background = '#1e3a8a'
+      card.style.borderColor = '#3b82f6'
+      setTimeout(() => {
+        card.style.background = '#1e293b'
+        card.style.borderColor = '#334155'
+      }, 300)
+    }
+    
+    return card
+  }
+  
+  // Poll to inject when textarea appears
+  setInterval(injectNewsButton, 1500)
+})()
+
+</script>
 </body>
 </html>
