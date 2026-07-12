@@ -131,23 +131,18 @@ Rules:
 })();
 </script>
 
+
 <script>
-// Fixed Tavily integration
 (function(){
   const TAVILY_KEY = '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'
   
   function inject(){
     const ta = document.querySelector('textarea')
-    if(!ta || ta.dataset.tavilyFixed) return
-    ta.dataset.tavilyFixed = '1'
+    if(!ta || ta.dataset.v2) return
+    ta.dataset.v2 = '1'
     
-    // Remove old button if exists
-    const oldBtn = document.getElementById('news-discover-btn')
-    if(oldBtn) oldBtn.parentElement.remove()
-    const oldPanel = document.getElementById('news-results')
-    if(oldPanel) oldPanel.remove()
-    const oldStatus = document.getElementById('news-status')
-    if(oldStatus) oldStatus.remove()
+    // Remove old
+    ['news-btn','news-status','news-results'].forEach(id => { const el = document.getElementById(id); if(el) el.remove() })
     
     const container = ta.parentElement
     const row = document.createElement('div')
@@ -163,106 +158,107 @@ Rules:
     status.style.cssText = 'font-size:12px;color:#94a3b8;padding:4px 0'
     
     btn.onclick = async () => {
-      btn.disabled = true
-      btn.textContent = '⏳ 搜索中...'
+      btn.disabled = true; btn.textContent = '⏳...'
       const panel = document.getElementById('news-results')
       if(panel) panel.innerHTML = ''
-      status.textContent = '搜索英语新闻...'
+      status.textContent = '搜索中...'
       
       try{
         const res = await fetch('https://api.tavily.com/search', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${TAVILY_KEY}`
-          },
+          headers: {'Content-Type':'application/json','Authorization':`Bearer ${TAVILY_KEY}`},
           body: JSON.stringify({
-            query: 'simple English news for ESL learners A2 B1 level',
+            query: 'simple English news ESL A2 B1 learners',
             search_depth: 'advanced',
             include_answer: 'basic',
             max_results: 5
           })
         })
-        
-        if(!res.ok){
-          const errText = await res.text()
-          throw new Error(`HTTP ${res.status}: ${errText.slice(0,100)}`)
-        }
-        
+        if(!res.ok) throw new Error(`Tavily ${res.status}`)
         const data = await res.json()
         const results = data.results || []
-        status.textContent = `找到 ${results.length} 条,分析中...`
+        status.textContent = `找到 ${results.length} 条,分析中...'
         
         const apiKey = localStorage.getItem('groq_api_key')
         const items = []
         
         for(const r of results.slice(0,3)){
-          const content = (r.content || '').slice(0, 2500)
-          if(content.length < 50) continue
-          const analysis = await analyze(apiKey, r.title, content)
-          items.push({ title: r.title, url: r.url, content, ...analysis })
+          const rawContent = (r.content || r.answer || '').slice(0, 3000)
+          if(rawContent.length < 80) continue
+          let analysis = { suitable: true, wordCount: rawContent.split(/\s+/).length, difficulty: 'B1', topic: 'General', excerpt: rawContent.slice(0,500) }
+          if(apiKey){
+            try{
+              const ar = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${apiKey}`},
+                body: JSON.stringify({
+                  model:'qwen/qwen3-32b',
+                  messages:[{role:'user',content:`分析这篇英语文章是否适合作A2-B1精读素材。输出JSON:{suitable(true/false),wordCount(词数估算),difficulty(A1/A2/B1/B2),topic(主题中文8字内),excerpt(从原文截取最合适的200-400字段落)}\n\n标题:${r.title}\n\n内容:${rawContent.slice(0,2500)}`}],
+                  temperature:0.3, maxTokens:512, response_format:{type:'json_object'}
+                })
+              })
+              const ad = await ar.json()
+              analysis = JSON.parse(ad.choices[0].message.content)
+            }catch(e){ /* use default */ }
+          }
+          items.push({
+            title: r.title,
+            url: r.url,
+            fullContent: rawContent,
+            suitable: analysis.suitable !== false,
+            wordCount: analysis.wordCount || rawContent.split(/\s+/).length,
+            difficulty: analysis.difficulty || 'B1',
+            topic: analysis.topic || 'General',
+            excerpt: analysis.excerpt || rawContent.slice(0, 500)
+          })
         }
         
-        const suitable = items.filter(a => a.suitable)
-        const panel2 = document.getElementById('news-results')
+        const suitable = items.filter(i => i.suitable)
+        let panel2 = document.getElementById('news-results')
         if(!panel2){
-          const p = document.createElement('div')
-          p.id = 'news-results'
-          p.style.cssText = 'margin-top:12px;display:flex;flex-direction:column;gap:8px'
-          container.appendChild(p)
+          panel2 = document.createElement('div')
+          panel2.id = 'news-results'
+          panel2.style.cssText = 'margin-top:12px;display:flex;flex-direction:column;gap:8px'
+          container.appendChild(panel2)
         }
-        const finalPanel = document.getElementById('news-results')
+        panel2.innerHTML = ''
         
         if(suitable.length === 0){
-          status.textContent = '未找到合适素材,试试手动粘贴'
+          status.textContent = '未找到合适素材'
         } else {
-          status.textContent = `✓ 找到 ${suitable.length} 条合适素材:`
+          status.textContent = `✓ 点击素材自动填入:`
           suitable.forEach(item => {
             const card = document.createElement('div')
-            card.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:10px;padding:12px;cursor:pointer'
-            card.innerHTML = `<div style="font-size:13px;font-weight:600;color:#f1f5f9">${item.title}</div><div style="font-size:11px;color:#94a3b8">${item.topic}·${item.difficulty}·~${item.wordCount}词</div><div style="font-size:12px;color:#cbd5e1;margin-top:4">${(item.excerpt||content).slice(0,150)}...</div>`
-            card.onclick = () => { ta.value = item.excerpt || item.content.slice(0,2000); ta.focus() }
-            finalPanel.appendChild(card)
+            card.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:10px;padding:12px;cursor:pointer;transition:border .15s'
+            card.onmouseenter = () => card.style.borderColor = '#7c3aed'
+            card.onmouseleave = () => card.style.borderColor = '#334155'
+            const showText = (item.excerpt || item.fullContent).slice(0, 150)
+            card.innerHTML = `<div style="font-size:13px;font-weight:600;color:#f1f5f9;margin-bottom:4">${item.title}</div><div style="font-size:11px;color:#94a3b8;margin-bottom:6">${item.topic}·${item.difficulty}·~${item.wordCount}词</div><div style="font-size:12px;color:#cbd5e1">${showText}...</div>`
+            card.onclick = () => {
+              ta.value = item.excerpt || item.fullContent.slice(0, 2000)
+              ta.focus()
+              window.scrollTo({ top: ta.offsetTop - 100, behavior: 'smooth' })
+              card.style.background = '#1e3a8a'
+              setTimeout(() => card.style.background = '#1e293b', 300)
+            }
+            panel2.appendChild(card)
           })
         }
       }catch(e){
         status.textContent = '错误: ' + e.message
       }finally{
-        btn.disabled = false
-        btn.textContent = '🔍 发现新闻素材'
+        btn.disabled = false; btn.textContent = '🔍 发现新闻素材'
       }
     }
     
-    async function analyze(apiKey, title, content){
-      if(!apiKey) return { suitable: true, wordCount: content.split(/\s+/).length, difficulty: 'B1', topic: 'General', excerpt: content.slice(0,500) }
-      try{
-        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {'Content-Type':'application/json','Authorization':`Bearer ${apiKey}`},
-          body: JSON.stringify({
-            model: 'qwen/qwen3-32b',
-            messages: [{role:'user',content:`分析是否适合A2-B1精读,输出JSON:{suitable,wordCount,difficulty,topic,excerpt(200-400字)}\n标题:${title}\n内容:${content.slice(0,2000)}`}],
-            temperature: 0.3, max_tokens: 512, response_format:{type:'json_object'}
-          })
-        })
-        const d = await res.json()
-        return JSON.parse(d.choices[0].message.content)
-      }catch{
-        return { suitable: true, wordCount: content.split(/\s+/).length, difficulty: 'B1', topic: 'General', excerpt: content.slice(0,500) }
-      }
-    }
-    
-    row.appendChild(btn)
-    row.appendChild(status)
+    row.appendChild(btn); row.appendChild(status)
     container.appendChild(row)
-    
     const panel = document.createElement('div')
     panel.id = 'news-results'
     panel.style.cssText = 'margin-top:12px;display:flex;flex-direction:column;gap:8px'
     container.appendChild(panel)
   }
   
-  setInterval(inject, 1500)
+  setInterval(inject, 1000)
 })()
 
 </script>
