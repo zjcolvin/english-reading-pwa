@@ -392,8 +392,9 @@ Rules:
 
 
 
+
 <script>
-// Auto news v2 - robust fallback + clear error messages
+// Auto-fill that works with React controlled components
 (function(){
   const TAVILY_KEY = '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'
   
@@ -408,51 +409,39 @@ Rules:
     fab.disabled = true; fab.textContent = '⏳...'
     const ta = document.querySelector('textarea')
     
-    const showMsg = (msg, isError) => {
-      if(ta){ ta.value = ''; ta.placeholder = msg }
-      fab.style.background = isError ? '#dc2626' : '#7c3aed'
-      setTimeout(() => { fab.style.background = '#7c3aed' }, 2000)
+    const setReactValue = (el, value) => {
+      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set
+      nativeInputValueSetter.call(el, value)
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+      el.dispatchEvent(new Event('change', { bubbles: true }))
     }
     
+    const showMsg = (msg) => { if(ta){ ta.value=''; ta.placeholder=msg } }
+    
     try{
-      // Step 1: Search
       const res = await fetch('https://api.tavily.com/search', {
-        method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':`Bearer ${TAVILY_KEY}`},
+        method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${TAVILY_KEY}`},
         body: JSON.stringify({
-          query:'English news simple ESL learners everyday life science health',
-          search_depth:'advanced',
-          include_answer:'basic',
-          max_results:8
+          query:'English news simple ESL learners everyday topics',
+          search_depth:'advanced', include_answer:'basic', max_results:8
         })
       })
-      if(!res.ok) throw new Error('搜索服务异常 HTTP '+res.status)
+      if(!res.ok) throw new Error('搜索异常 HTTP '+res.status)
       const data = await res.json()
       const results = data.results || []
-      if(results.length === 0) throw new Error('搜索无结果')
+      if(!results.length) throw new Error('搜索无结果')
       
       const apiKey = localStorage.getItem('groq_api_key')
-      if(!apiKey){ showMsg('请先配置 Groq API Key(点右上角按钮)', true); throw new Error('no key') }
+      if(!apiKey){ showMsg('请先配置 Groq API Key'); throw new Error('no key') }
       
       let bestExcerpt = ''
       let bestInfo = ''
-      const errors = []
       
       for(const r of results.slice(0,6)){
         const raw = (r.content || r.answer || '').slice(0,6000)
         if(raw.length < 200) continue
         
-        const prompt = `分析以下英语文章,提取最适合A2-B1精读的正文段落。
-
-规则:
-1. 只保留正文!去掉标题/日期/作者/来源/网站名/广告
-2. 连续完整段落,不跳段不拼接
-3. 200-350英文单词
-4. 完整、有意义、可独立阅读
-
-文章:${raw.slice(0,5000)}
-
-只输出JSON:{word_count:数字,difficulty:A2/B1/B2,topic:中文6字,excerpt:纯正文段落}`
+        const prompt = `提取最适合A2-B1精读的正文段落。规则:1)只保留正文,去掉标题/日期/来源 2)连续完整段落 3)200-350英文词 4)可独立阅读。只输出JSON:{word_count:数字,difficulty:A2/B1/B2,topic:中文6字,excerpt:纯正文}。文章:${raw.slice(0,5000)}`
         
         try{
           const ar = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -463,10 +452,10 @@ Rules:
               temperature:0.3, maxTokens:1200, response_format:{type:'json_object'}
             })
           })
-          if(!ar.ok){ errors.push('LLM '+ar.status); continue }
+          if(!ar.ok) continue
           const ad = await ar.json()
-          const text = ad.choices && ad.choices[0] && ad.choices[0].message && ad.choices[0].message.content
-          if(!text){ errors.push('empty'); continue }
+          const text = ad.choices?.[0]?.message?.content
+          if(!text) continue
           const analysis = JSON.parse(text)
           const wc = analysis.word_count || (analysis.excerpt||'').split(/\s+/).length
           if(wc >= 120 && analysis.excerpt && analysis.excerpt.length > 500){
@@ -474,27 +463,26 @@ Rules:
             bestInfo = analysis.topic+'·'+analysis.difficulty+'·'+wc+'词'
             break
           }
-        }catch(e){ errors.push(e.message.slice(0,30)) }
+        }catch(e){ continue }
       }
       
       if(ta){
         if(bestExcerpt){
-          ta.value = bestExcerpt
+          setReactValue(ta, bestExcerpt)
           ta.focus()
         } else {
-          // Fallback: use raw content from first result
-          const firstRaw = (results[0].content || results[0].answer || '').slice(0,2000)
-          if(firstRaw.length > 200){
-            ta.value = firstRaw
-            ta.placeholder = '⚠️ 自动分析失败,使用原始片段(共'+results.length+'条)'
+          // Fallback: use first result raw content
+          const raw = (results[0].content || results[0].answer || '').slice(0,3000)
+          if(raw.length > 100){
+            setReactValue(ta, raw)
+            ta.placeholder = '⚠️ 使用原始片段'
           } else {
-            ta.placeholder = '❌ 未找到合适素材:' + (errors[0] || '内容太短')
+            showMsg('❌ 未找到合适素材')
           }
         }
       }
-      
     }catch(e){
-      showMsg('❌ '+e.message, true)
+      showMsg('❌ '+e.message)
     }finally{
       fab.disabled = false; fab.textContent = '🔍 自动找新闻'
     }
