@@ -11,13 +11,13 @@ textarea{width:100%!important;height:150px;padding:12px;background:#1e293b;borde
 button{cursor:pointer;font-family:inherit}
 .card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:10px 12px;margin-bottom:8px}
 .fab{position:fixed;bottom:20px;right:20px;padding:12px 18px;background:#7c3aed;border:none;border-radius:30px;color:#fff;font-size:13px;font-weight:700;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:9999}
-.sec-hdr{font-size:13px;font-weight:700;color:#fbbf24;padding:6px 0;cursor:pointer;border-bottom:1px solid #334155;margin-bottom:8px}
+.sec{font-size:13px;font-weight:700;color:#fbbf24;padding:6px 0;cursor:pointer;border-bottom:1px solid #334155;margin-bottom:8px}
 </style>
 </head>
 <body>
 <div class="container">
 <h1 style="margin:0;font-size:20px">📖 英语精读</h1>
-<div style="font-size:12px;color:#64748b;margin:4px 0 16px">A2-B1 精读笔记</div>
+<div style="font-size:12px;color:#64748b;margin:4px 0 16px">A2-B1 精读笔记(完整教案)</div>
 
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
   <div style="font-size:12px;color:#64748b" id="counter">0 词</div>
@@ -44,80 +44,63 @@ button{cursor:pointer;font-family:inherit}
 <script>
 var ta=document.getElementById("ta"),analyzeBtn=document.getElementById("analyze"),errorDiv=document.getElementById("error"),resultsDiv=document.getElementById("results"),counter=document.getElementById("counter"),keyBtn=document.getElementById("keyBtn"),keyPanel=document.getElementById("keyPanel"),keyInput=document.getElementById("keyInput"),saveKeyBtn=document.getElementById("saveKeyBtn"),fab=document.getElementById("fab");
 
-function getKey(){return localStorage.getItem("groq_api_key")||""}
-function hasKey(){return getKey().length>10}
+function getKey(){return localStorage.getItem("groq_api_key")||""};function hasKey(){return getKey().length>10}
 function refreshBtn(){analyzeBtn.style.background=hasKey()?"#3b82f6":"#475569";analyzeBtn.textContent=hasKey()?"开始分析":"请先配置 API";analyzeBtn.disabled=!hasKey()}
 
-ta.addEventListener("input",function(){counter.textContent=ta.value.trim().split(/\s+/).filter(Boolean).length+" 词"});
+ta.addEventListener("input",function(){counter.textContent=ta.value.trim().split(/\\s+/).filter(Boolean).length+" \u8BCD"});
 keyBtn.onclick=function(){keyPanel.style.display=keyPanel.style.display==="none"?"block":"none";keyInput.value=getKey()};
 saveKeyBtn.onclick=function(){localStorage.setItem("groq_api_key",keyInput.value.trim());keyPanel.style.display="none";refreshBtn()};
 refreshBtn();
 
-analyzeBtn.onclick=function(){
-  var text=ta.value.trim();
-  if(text.length<20){showError("文本太短");return}
-  if(!hasKey()){keyPanel.style.display="block";return}
-  analyze(text,getKey());
-};
-
-function showError(msg){errorDiv.textContent="⚠️ "+msg}
+analyzeBtn.onclick=function(){var t=ta.value.trim();if(t.length<20){err("\u6587\u672C\u592A\u77ED");return}if(!hasKey()){keyPanel.style.display="block";return};analyze(t,getKey())}};
+function err(m){errorDiv.textContent="⚠️ "+m}
 function analyze(text,key){
-  resultsDiv.innerHTML="<div style=\"color:#94a3b8\">分析中(约15秒)...</div>";
+  resultsDiv.innerHTML="<div style=\"color:#94a3b8\">\u5206\u6790\u4E2D(\u7EA630\u79D2)...</div>";
   errorDiv.textContent="";
-  var prompt="你是ESL精读教学专家。分析以下英语文本,输出完整精读教案(JSON格式,不要markdown代码块):\n\n"+text.slice(0,2500)+"\n\n严格输出JSON(不要```markdown):{vocab:[{word:\"\",ipa:\"/ /\",pos:\"n.\",cn_def:\"\",en_def:\"\",register:\"通用\",memory:\"\",synonyms_a2:\"\",synonyms_natural:\"\",synonyms_formal:\"\",collocations:[\"\",\"\"],original:\"\",new_example:\"\"}],pronunciation:[{written:\"\",natural:\"\",rule:\"\"}],pronunciation_sentence:{original:\"\",phonetic:\"\",annotations:[\"🔗连读说明\",\"🔉弱读说明\"]},rhythm:[{sentence:\"\",mark:\"●○●\"}],chunks:[{chunk:\"\",frequency:\"★★★\",variations:[\"\"],examples:[\"\"]}],synonym_discrimination:[{group:\"\",common_meaning:\"\",cards:[{word:\"\",register:\"\",collocation:\"\"}],substitutable:\"\",common_error:\"\",exercise:\"\"}],practice:{style_swap:[{informal:\"\",formal:\"\"}],shadowing:[\"\",\"\"],challenges:[\"\",\"\"]}}";
-  fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},body:JSON.stringify({model:"llama-3.3-70b-versatile",messages:[{role:"user",content:prompt}],temperature:0.3,max_tokens:2500})}).then(function(r){return r.ok?r.json():Promise.reject("HTTP "+r.status)}).then(function(d){var c=d.choices[0].message.content;try{renderFull(JSON.parse(c))}catch(e){var m=c.match(/\{[\s\S]*\}/);if(m)renderFull(JSON.parse(m[0]));else showError("解析失败")}}).catch(function(e){showError(typeof e==="string"?e:e.message);resultsDiv.innerHTML=""});
+  var prompt="ESL\u7CBE\u8BFB\u6559\u6848\u4E13\u5BB6\u3002\u5206\u6790\u4EE5\u4E0B\u6587\u672C,\u8F93\u51FA\u5B8C\u6574\u6559\u6848(JSON\u683C\u5F0F,\u4E0D\u8981markdown\u4EE3\u7801\u5757):\\n\\n"+text.slice(0,2500)+"\\n\\n\u4E25\u683C\u8F93\u51FAJSON(NEVER wrap in ```markdown):{vocab:[{word:\"\",ipa:\"\",pos:\"\",cn_def:\"\",register:\"\u901A\u7528\",memory:\"\u8BCD\u6839\u8054\u60F3\u52A8\u8BB015\u5B57\u5185\",word_family:\"\u6D3E\u751F\u8BCD(\u65E0\u5219\\u201C\u2014\\u201D)\",visual_words:\"\u5F81\u8FD1\u8BCD(\u65E0\u5219\\u201C\u2014\\u201D)\",synonyms_a2:\"A2\u57FA\u7840\u8BCD\",synonyms_natural:\"\u53E3\u8BED\u81EA\u7136\u7248\",synonyms_formal:\"\u6B63\u5F0F\u4E66\u9762\u7248\",collocations:{correct:[\"\u6B63\u786E\u642D\u914D1\",\"\u6B63\u786E\u642D\u914D2\"],wrong:[\"\u5E38\u89C1\u9519\u8BEF\u642D\u914D\"]},original:\"\u539F\u6587\u4F8B\u53E5\",new_example:\"\u65B0\u573A\u666F\u9020\u53E5(\u5E26\u4E2D\u6587\u63D0\u793A)\",context:\"\u8BE5\u8BCD\u5728\u539F\u6587\u7684\u4F7F\u7528\u573A\u666F\u8BF4\u660E\"}],pronunciation:[{written:\"\",natural:\"\",rule:\"\"}],pronunciation_sentence:{original:\"\",phonetic:\"\",annotations:[\"\uF09F\u9487\u8FDE\u8BFB\u8BF4\u660E\",\"\uF09F\u8089\u5F31\u8BFB\u8BF4\u660E\"]},rhythm:[{sentence:\"\",mark:\"\u25CF\u9615\u25CF\"}],chunks:[{chunk:\"\",pronunciation_split:\"\u63A8\u8350\u8BFB\u6CD5\u5207\u5206\",meaning_cn:\"\u4E2D\u6587\u610F\u601D\",structure:\"\u7ED3\u6784\u5206\u6790\",original_sentence:\"\u65B0\u95FB\u539F\u53E5\",common_usage:\"\u5E38\u89C1\u7528\u6CD5\",cn_mistranslation:\"\u4E2D\u6587\u76F4\u8BD1\u8BEF\u533A\"}],synonym_discrimination:[{group:\"\",common_meaning:\"\u5171\u540C\u542B\u4E49\",cards:[{word:\"\",register:\"\u8BED\u573A\",collocation:\"\u642D\u914D\",substitutable:\"\u53EE\u6362\u6027\u5224\u65AD\",tone_rank:\"\u8BED\u6C14\u6392\u5E8F\"}],common_error:\"\u6613\u9519\u7528\u6CD5\",memory:\"\uF09F\uA7A0\u52A8\u8BB0\",exercise_blank:\"\u270D\uFE0F\u9020\u53E5\u7EC3\u4E60(\u7559\u7A7A)\"}],practice:{style_swap:[{informal:\"\u53E3\u8BED\u7248\",formal:\"\u6B63\u5F0F\u7248\"}],shadowing:[\"\u7B2C\u4E00\u6B65:\u542C\u539F\u6587\u6807\u6CE8\u91CD\u5F31\u8BFB\",\"\u7B2C\u4E8C\u6B65:\u8DDF\u8BFB3\u904D\u6A21\u4EFF\u8282\u594F\",\"\u7B2C\u4E09\u6B65:\u6717\u8BF5\u5F55\u97F3\u5BF9\u6BD4\"],challenges:[\"\u7528\u4ECA\u65E53\u4E2A\u8BED\u5757\u9020\u4E00\u6BB560\u8BCD\u77ED\u6587\",\"\u7528\u6B63\u5F0F\u8BED\u4F53\u91CD\u5199\u7B2C\u4E00\u6BB5\"]}}";
+
+  fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},body:JSON.stringify({model:"llama-3.3-70b-versatile",messages:[{role:"user",content:prompt}],temperature:0.3,max_tokens:3000})}).then(function(r){return r.ok?r.json():Promise.reject("HTTP "+r.status)}).then(function(d){var c=d.choices[0].message.content;try{renderFull(JSON.parse(c))}catch(e){var m=c.match(/\{[\s\S]*\}/);if(m)renderFull(JSON.parse(m[0]));else err("解析失败:"+c.slice(0,100))}}).catch(function(e){err(typeof e==="string"?e:e.message);resultsDiv.innerHTML=""});
 }
 
-function renderFull(data){
-  resultsDiv.innerHTML="<h3 style=\"color:#4ade80\">📝 词汇学习("+(data.vocab?data.vocab.length:0)+"词)</h3>";
-  let grid=document.createElement("div");grid.style.cssText="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px;margin-bottom:16px";
-  (data.vocab||[]).forEach(function(v){
-    grid.innerHTML+=`<div class="card"><div style="font-size:14px;font-weight:700;color:#f1f5f9">${v.word} <span style="font-size:11px;color:#fbbf24">${v.pos||""}</span> <span style="font-size:10px;color:#94a3b8">${v.ipa||""}</span></div><div style="font-size:12px;color:#cbd5e1">${v.cn_def||""}</div><div style="font-size:10px;color:#94a3b8;font-style:italic">${v.en_def||""}</div><div style="font-size:10px;color:#a78bfa;margin-top:2px">💡 ${v.memory||"-"}</div><div style="font-size:10px;color:#60a5fa">🔄 ${(v.synonyms_a2||"-")} → ${(v.synonyms_natural||"-")} → ${(v.synonyms_formal||"-")}</div><div style="font-size:10px;color:#34d399">🔗 ${Array.isArray(v.collocations)?v.collocations.join(" / "):"-"}</div><details style="margin-top:4px"><summary style="font-size:10px;color:#60a5fa;cursor:pointer">例句</summary><div style="font-size:10px;color:#cbd5e1;margin-top:3px">📖 ${v.original||"-"}</div><div style="font-size:10px;color:#94a3b8">✏️ ${v.new_example||"-"}</div></details></div>`;
+function renderFull(d){
+  resultsDiv.innerHTML="<h3 style=\"color:#4ade80\">📝 增强词汇卡("+(d.vocab?d.vocab.length:0)+"词)</h3>";
+  var g=document.createElement("div");g.style.cssText="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;margin-bottom:16px";
+  (d.vocab||[]).forEach(function(v){
+    g.innerHTML+=`<div class="card"><div style="font-size:14px;font-weight:700;color:#f1f5f9">${v.word} <span style="font-size:10px;color:#fbbf24">${v.pos||""}</span> <span style="font-size:10px;color:#94a3b8">${v.ipa||""}</span> <span style="font-size:9px;padding:1px 4px;background:#334155;border-radius:3px;color:#94a3b8">${v.register||"通用"}</span></div><div style="font-size:12px;color:#cbd5e1;margin:3px 0">${v.cn_def||""}</div><div style="font-size:10px;color:#a78bfa;margin-bottom:3px">💡 ${v.memory||"-"}</div><details style="margin:3px 0"><summary style="font-size:10px;color:#60a5fa;cursor:pointer">📌 原文语境</summary><div style="font-size:10px;color:#cbd5e1;margin-top:2px">${v.context||v.original||"-"}</div></details><div style="font-size:10px;color:#60a5fa">🔄 三阶同义: ${v.synonyms_a2||"-"}→${v.synonyms_natural||"-"}→${v.synonyms_formal||"-"}</div><div style="font-size:10px;color:#34d399">✓ ${Array.isArray(v.collocations?.correct)?v.collocations.correct.join(" / "):"-"}</div><div style="font-size:10px;color:#f87171">✗ ${Array.isArray(v.collocations?.wrong)?v.collocations.wrong.join(" / "):"-"}</div><div style="font-size:10px;color:#a78bfa">🌿 派生: ${v.word_family||"—"}</div><div style="font-size:10px;color:#fb923c">👁️ 形近: ${v.visual_words||"—"}</div><details style="margin-top:3px"><summary style="font-size:10px;color:#94a3b8;cursor:pointer">搭配+造句</summary><div style="font-size:10px;color:#cbd5e1">🔗 ${(v.collocations?.correct||[]).join(", ")}</div><div style="font-size:10px;color:#fbbf24">✏️ ${v.new_example||"-"}</div></details></div>`;
   });
-  resultsDiv.appendChild(grid);
+  resultsDiv.appendChild(g);
 
-  const mkSection=function(title,content){
-    const d=document.createElement("div");d.style.cssText="margin-bottom:12px";
-    const h=document.createElement("div");h.className="sec-hdr";h.textContent="▶ "+title;
-    const b=document.createElement("div");b.innerHTML=content;
-    h.onclick=function(){const v=b.style.display!=='none';b.style.display=v?'none':'block';h.textContent=(v?'▶':'▼')+title};
-    d.appendChild(h);d.appendChild(b);resultsDiv.appendChild(d);
-  };
+  const mk=function(title,content){var dv=document.createElement("div");dv.style.cssText="margin-bottom:12px";var hd=document.createElement("div");hd.className="sec";hd.textContent="▶ "+title;var bd=document.createElement("div");bd.innerHTML=content;hd.onclick=function(){var v=bd.style.display!=='none';bd.style.display=v?'none':'block';hd.textContent=(v?'▶':'▼')+title};dv.appendChild(hd);dv.appendChild(bd);resultsDiv.appendChild(dv)};
 
   // Pronunciation
-  let pron="";
-  (data.pronunciation||[]).forEach(function(p,i){pron+=`<div class="card" style="font-size:11px"><span style="color:#f1f5f9">${i+1}. ${p.written}</span> → <strong style="color:#4ade80">${p.natural}</strong> <span style="color:#94a3b8">- ${p.rule}</span></div>`});
-  if(data.pronunciation_sentence){pron+=`<div class="card" style="font-size:11px"><strong>全句音标:</strong><br><span style="color:#fbbf24">${(data.pronunciation_sentence.phonetic||"").slice(0,200)}</span><br><span style="color:#60a5fa">${(data.pronunciation_sentence.annotations||[]).join("<br>")}</span></div>`}
-  mkSection("🔊 Connected Speech 语音音变(8条+全句音标)",pron);
+  var pron="";(d.pronunciation||[]).forEach(function(p,i){pron+=`<div class="card" style="font-size:11px">${i+1}. <span style="color:#f1f5f9">${p.written}</span>→<strong style="color:#4ade80">${p.natural}</strong> <span style="color:#94a3b8">${p.rule}</span></div>`});
+  if(d.pronunciation_sentence){pron+=`<div class="card" style="font-size:11px"><strong>全句音标:</strong><br><span style="color:#fbbf24">${(d.pronunciation_sentence.phonetic||"").slice(0,200)}</span><br><span style="color:#60a5fa">${(d.pronunciation_sentence.annotations||[]).join("<br>")}</span></div>`}
+  mk("🔊 Connected Speech(8条+全句音标)",pron);
 
   // Rhythm
-  let rh="";
-  (data.rhythm||[]).forEach(function(r){rh+=`<div class="card" style="font-size:11px"><span style="font-family:monospace;color:#fbbf24">${r.mark}</span><br><span style="color:#cbd5e1">${r.sentence}</span></div>`});
-  mkSection("🎵 Sentence Rhythm 句子节奏",rh);
+  var rh="";(d.rhythm||[]).forEach(function(r){rh+=`<div class="card" style="font-size:11px"><span style="font-family:monospace;color:#fbbf24">${r.mark}</span> <span style="color:#cbd5e1">${r.sentence}</span></div>`});
+  mk("🎵 Sentence Rhythm(重弱拍)",rh);
 
-  // Chunks
-  let ch="";
-  (data.chunks||[]).forEach(function(c){ch+=`<div class="card" style="font-size:11px"><strong style="color:#a78bfa">${c.chunk}</strong> <span style="color:#fbbf24">${c.frequency||""}</span><div style="color:#94a3b8">${(c.variations||[]).join(" / ")}</div><div style="color:#cbd5e1">${(c.examples||[]).map(e=>"• "+e).join("<br>")}</div></div>`});
-  mkSection("🧩 Chunks & Collocations 语块(6个)",ch);
+  // Chunks (8-10 cards)
+  var ch="";(d.chunks||[]).forEach(function(c){ch+=`<div class="card"><div style="font-size:13px;font-weight:700;color:#a78bfa">${c.chunk}</div><div style="font-size:10px;color:#fbbf24">📖 ${c.pronunciation_split||"—"}</div><div style="font-size:11px;color:#cbd5e1">含义: ${c.meaning_cn||"—"}</div><div style="font-size:10px;color:#94a3b8">结构: ${c.structure||"—"}</div><div style="font-size:10px;color:#cbd5e1">📰 原句: ${c.original_sentence||"—"}</div><div style="font-size:10px;color:#34d399">常见: ${c.common_usage||"—"}</div><div style="font-size:10px;color:#f87171">⚠️ 误区: ${c.cn_mistranslation||"—"}</div></div>`});
+  mk("🧩 Chunks Card Group(8-10张)",ch);
 
   // Synonym Discrimination
-  let syn="";
-  (data.synonym_discrimination||[]).forEach(function(g){syn+=`<div class="card" style="font-size:11px"><strong style="color:#a78bfa">${g.group}</strong><div style="color:#cbd5e1">共同: ${g.common_meaning}</div><div style="color:#94a3b8">${(g.cards||[]).map(c=>"• "+c.word+"("+c.register+", "+c.collocation+")").join("<br>")}</div><div style="color:#60a5fa">💡 ${g.substitutable||"-"}</div><div style="color:#f87171">⚠️ ${g.common_error||"-"}</div></div>`});
-  mkSection("🔄 Synonym Discrimination 同义辨析(2-3组)",syn);
+  var syn="";(d.synonym_discrimination||[]).forEach(function(g){syn+=`<div class="card"><div style="font-size:13px;font-weight:700;color:#a78bfa">${g.group}</div><div style="font-size:11px;color:#cbd5e1">共同含义: ${g.common_meaning||"—"}</div><div style="font-size:10px;color:#94a3b8">${(g.cards||[]).map(function(c){return"• <strong>"+c.word+"</strong>("+c.register+", "+c.collocation+")<br> 可替换性: "+c.substitutable+"<br> 语气排序: "+c.tone_rank}).join("<br>")}</div><div style="font-size:10px;color:#f87171">⚠️ 易错: ${g.common_error||"—"}</div><div style="font-size:10px;color:#a78bfa">🧠 助记: ${g.memory||"—"}</div><div style="font-size:10px;color:#60a5fa">✏️ 练习: ${g.exercise_blank||"—"}</div></div>`});
+  mk("🔄 Synonym Discrimination(2-3组)",syn);
 
   // Practice
-  let pr="";
-  (data.practice.style_swap||[]).forEach(function(s){pr+=`<div class="card" style="font-size:11px"><span style="color:#cbd5e1">🗣 ${s.informal}</span><br><span style="color:#93c5fd">📊 ${s.formal}</span></div>`});
-  pr+="<div style=\"font-size:11px;color:#cbd5e1;margin-top:8px\"><strong>跟读三步法:</strong><br>"+((data.practice.shadowing||[]).map((s,i)=>(i+1)+". "+s).join("<br>"))+"</div>";
-  pr+="<div style=\"font-size:11px;color:#cbd5e1;margin-top:8px\"><strong>造句挑战:</strong><br>"+(data.practice.challenges||[]).map(c=>"✍️ "+c).join("<br>")+"</div>";
-  mkSection("✍️ Practice 练习",pr);
+  var pr="";(d.practice?.style_swap||[]).forEach(function(s){pr+=`<div class="card" style="font-size:11px"><span style="color:#cbd5e1">🗣 ${s.informal}</span><br><span style="color:#93c5fd">📊 ${s.formal}</span></div>`});
+  pr+="<div style=\"font-size:11px;color:#cbd5e1;margin-top:8px\"><strong>三步跟读法:</strong><br>"+((d.practice?.shadowing||[]).map(function(s,i){return(i+1)+". "+s}).join("<br>"))+"</div>";
+  pr+="<div style=\"font-size:11px;color:#cbd5e1;margin-top:8px\"><strong>造句挑战:</strong><br>"+(d.practice?.challenges||[]).map(function(c){return"✍️ "+c}).join("<br>")+"</div>";
+  mk("✍️ Practice(语体转换+跟读+挑战)",pr);
 
   resultsDiv.scrollIntoView({behavior:"smooth"});
 }
 
 // FAB
-var FALLBACK=["A simple guide to healthy eating\n\nMany people want to eat better but do not know where to start. Eating healthy does not have to be difficult or expensive. Here are some simple tips anyone can follow.\n\nFirst, try to eat more fruits and vegetables. Experts recommend eating at least five portions every day. They contain important vitamins and minerals that help your body stay strong and fight illness.\n\nSecond, drink enough water. Water is essential for every function in your body. It helps digestion, keeps your skin clear, and gives you energy. Most adults should drink about eight glasses each day.\n\nThird, reduce your intake of processed foods. These foods often contain too much sugar, salt, and unhealthy fats. Instead, choose whole foods like brown rice, oats, and whole wheat bread.\n\nFinally, do not skip breakfast. A good breakfast gives you the energy you need to start your day. Include protein like eggs or yogurt along with some fruit.","The benefits of walking every day\n\nWalking is one of the simplest and most effective forms of exercise. You do not need special equipment or a gym membership. All you need is comfortable shoes and a place to walk.\n\nStudies show that walking thirty minutes a day improves your health in many ways. It strengthens your heart and lungs, helps control weight, and can reduce feelings of stress and anxiety.\n\nIf you are new to walking, start slowly with ten or fifteen minutes. Gradually increase as your fitness improves. Walk at a pace that makes you breathe harder but still allows you to talk.\n\nWalking outdoors has additional benefits. Fresh air and natural sunlight boost mood and help produce vitamin D.","How to get better sleep\n\nSleep is essential for both physical and mental health. Most adults need seven to nine hours of sleep each night. However, many people struggle to get enough quality sleep.\n\nOne important thing is maintaining a regular sleep schedule. Go to bed and wake up at the same time every day, even on weekends. This helps regulate your body internal clock.\n\nCreate a relaxing bedtime routine. Avoid screens for at least an hour before bed. The blue light can interfere with sleep. Keep your bedroom cool, dark, and quiet. Avoid caffeine and alcohol close to bedtime."];
-fab.onclick=function(){ta.value=FALLBACK[Math.floor(Math.random()*FALLBACK.length)];counter.textContent=ta.value.trim().split(/\s+/).filter(Boolean).length+" 词"};
+var FB=["A simple guide to healthy eating. Many people want to eat better. Eat more fruits and vegetables every day. They contain important vitamins and minerals. Drink enough water every day. Reduce processed foods. Choose whole foods. Do not skip breakfast.","Walking is simple exercise. Walk thirty minutes daily. Strengthens heart and lungs. Improves mood. Start slowly and increase gradually.","Sleep is essential for health. Adults need seven to nine hours. Maintain a regular schedule. Avoid screens before bed. Keep bedroom cool and dark."];
+fab.onclick=function(){ta.value=FB[Math.floor(Math.random()*FB.length)];counter.textContent=ta.value.split(/\s+/).filter(Boolean).length+" \u8BCD"};
 </script>
 </body>
 </html>
