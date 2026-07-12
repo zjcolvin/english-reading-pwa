@@ -493,5 +493,126 @@ Rules:
 })()
 
 </script>
+<script>
+// Auto news v3 - strict selection rules
+(function(){
+  const TAVILY_KEY = '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'
+  const TOPICS = 'lifestyle health technology travel food sports learning consumer science education environment culture art music film business economy daily life'
+  const AVOID = 'politics political election war conflict violence crime murder terrorist shooting protest controversy scandal Trump Biden Putin Ukraine Gaza Israel Republican Democrat parliament congress legislation'
+  
+  const fab = document.createElement('div')
+  fab.id = 'news-fab'
+  fab.textContent = '🔍 自动找新闻'
+  fab.style.cssText = 'position:fixed;bottom:20px;right:20px;padding:12px 18px;background:#7c3aed;border:none;border-radius:30px;color:#fff;cursor:pointer;font-size:13px;font-weight:700;box-shadow:0 4px 12px rgba(124,58,237,0.4);z-index:9999;user-select:none'
+  fab.onmouseenter = () => fab.style.background = '#6d28d9'
+  fab.onmouseleave = () => fab.style.background = '#7c3aed'
+  fab.onclick = async () => {
+    document.querySelectorAll('button').forEach(t => { if(t.textContent.includes('新建笔记')) t.click() })
+    fab.disabled = true; fab.textContent = '⏳...'
+    const ta = document.querySelector('textarea')
+    
+    const setReactValue = (el, value) => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set
+      setter.call(el, value)
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+    const showMsg = (msg) => { if(ta){ ta.value = ''; ta.placeholder = msg } }
+    
+    try{
+      // Search with topic restriction and recency
+      const query = `(${TOPICS}) NOT (${AVOID}) site:news OR site:bbc OR site:reuters OR site:apnews OR site:npr`
+      const res = await fetch('https://api.tavily.com/search', {
+        method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${TAVILY_KEY}`},
+        body: JSON.stringify({
+          query: query,
+          search_depth:'advanced', include_answer:'basic', max_results:10,
+          time_range:'two_days' // 24-48 hours
+        })
+      })
+      if(!res.ok) throw new Error('搜索异常 HTTP '+res.status)
+      const data = await res.json()
+      const results = data.results || []
+      if(!results.length) throw new Error('搜索无结果')
+      
+      const apiKey = localStorage.getItem('groq_api_key')
+      if(!apiKey){ showMsg('请先配置 Groq API Key'); throw new Error('no key') }
+      
+      let bestExcerpt = ''
+      let bestInfo = ''
+      let checked = 0
+      
+      for(const r of results.slice(0,8)){
+        const raw = (r.content || r.answer || '').slice(0,6000)
+        if(raw.length < 300) continue
+        checked++
+        
+        const prompt = `你是一个英语精读素材编辑。严格根据以下规则评估并提取正文:
+
+【选文规则】
+1. 话题必须是以下之一:生活/健康/科技/旅行/美食/运动/学习/消费/科学/教育/环境/文化/艺术/音乐/电影/商业/经济/日常
+2. 严格避免:政治选举/战争冲突/暴力犯罪/争议性社会议题/色情
+3. 只保留纯正文,去掉标题/日期/作者/来源/网站名/广告/版权声明
+4. 截取连续完整段落,200-350英文词
+5. 段落必须完整、有意义、可独立阅读
+
+文章标题:${r.title || '无'}
+文章内容:${raw.slice(0,5000)}
+
+只输出JSON:
+{
+  "suitable": true/false(是否符合规则1和2),
+  "topic": "中文6字内(符合规则1的话题)",
+  "reason": "10字内说明通过/拒绝原因",
+  "word_count": 数字,
+  "difficulty": "A2/B1/B2",
+  "excerpt": "符合规则3和4的纯正文段落"
+}`
+
+        try{
+          const ar = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${apiKey}`},
+            body: JSON.stringify({
+              model:'qwen/qwen3-32b',
+              messages:[{role:'user',content:prompt}],
+              temperature:0.2, maxTokens:1200, response_format:{type:'json_object'}
+            })
+          })
+          if(!ar.ok) continue
+          const ad = await ar.json()
+          const text = ad.choices?.[0]?.message?.content
+          if(!text) continue
+          const analysis = JSON.parse(text)
+          
+          if(!analysis.suitable) continue
+          const wc = analysis.word_count || (analysis.excerpt||'').split(/\s+/).length
+          if(wc < 120 || !analysis.excerpt || analysis.excerpt.length < 500) continue
+          
+          bestExcerpt = analysis.excerpt
+          bestInfo = analysis.topic+'·'+analysis.difficulty+'·'+wc+'词'
+          break
+        }catch(e){ continue }
+      }
+      
+      if(ta){
+        if(bestExcerpt){
+          setReactValue(ta, bestExcerpt)
+          ta.focus()
+        } else {
+          showMsg('❌ 未找到合适话题(已检查'+checked+'条),稍后重试或手动粘贴')
+        }
+      }
+    }catch(e){
+      showMsg('❌ '+e.message)
+    }finally{
+      fab.disabled = false; fab.textContent = '🔍 自动找新闻'
+    }
+  }
+  
+  if(document.readyState === 'loading'){ document.addEventListener('DOMContentLoaded', ()=>document.body.appendChild(fab)) }
+  else { document.body.appendChild(fab) }
+})()
+
+</script>
 </body>
 </html>
